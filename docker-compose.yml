@@ -1,0 +1,61 @@
+services:
+  redis:
+    image: redis:8.4
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  seed:
+    build:
+      context: ./backend
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+    command: ["python", "-m", "app.seed", "--reset", "--count", "360"]
+    volumes:
+      - model-cache:/root/.cache/huggingface
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ./backend
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:5173}
+      ROUTER_TIMEOUT_MS: ${ROUTER_TIMEOUT_MS:-30000}
+      RERANK_TIMEOUT_MS: ${RERANK_TIMEOUT_MS:-3000}
+      PERSONALIZATION_AFFINITY_WEIGHT: ${PERSONALIZATION_AFFINITY_WEIGHT:-0.10}
+      PROMOTION_RELEVANCE_WEIGHT: ${PROMOTION_RELEVANCE_WEIGHT:-0.08}
+      POPULARITY_TIEBREAKER_WEIGHT: ${POPULARITY_TIEBREAKER_WEIGHT:-0.02}
+      POLICY_TOTAL_MAX_BOOST: ${POLICY_TOTAL_MAX_BOOST:-0.12}
+    ports:
+      - "8000:8000"
+    volumes:
+      - model-cache:/root/.cache/huggingface
+    depends_on:
+      redis:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+
+volumes:
+  redis-data:
+  model-cache:
