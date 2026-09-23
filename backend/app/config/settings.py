@@ -3,6 +3,8 @@ from functools import lru_cache
 from pydantic import Field, HttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.retailers import RetailerDefinition, get_retailer
+
 
 class Settings(BaseSettings):
     """Runtime configuration with local-safe defaults."""
@@ -10,8 +12,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_env: str = "local"
+    retailer_id: str = "bhn"
     redis_url: str = "redis://localhost:6379"
-    redis_index_alias: str = "demo:giftcards"
     redis_index_version: str = "v1"
     redis_vector_algorithm: str = "flat"
     embedding_provider: str = "local_hf"
@@ -20,7 +22,6 @@ class Settings(BaseSettings):
     embedding_cache_ttl_seconds: int = Field(default=3_600, ge=60, le=86_400)
     search_candidate_count: int = Field(default=25, ge=10, le=100)
     search_rrf_k: int = Field(default=60, ge=1, le=200)
-    router_name: str = "demo:routes"
     router_timeout_ms: int = Field(default=30_000, ge=1, le=60_000)
     reranker_provider: str = "local_hf"
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
@@ -35,6 +36,10 @@ class Settings(BaseSettings):
     redis_socket_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
     frontend_origin: HttpUrl = "http://localhost:5173"
     enable_debug: bool = True
+
+    @property
+    def retailer(self) -> RetailerDefinition:
+        return get_retailer(self.retailer_id)
 
 
 @lru_cache

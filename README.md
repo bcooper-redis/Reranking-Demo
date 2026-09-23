@@ -29,6 +29,17 @@ The `seed` service prepares Redis before the API starts. During Milestone 0 it v
 - [x] Milestone 5: personalization and merchandising.
 - [x] Milestone 6: evaluation, telemetry, and presenter polish.
 - [x] Milestone 7: bounded concurrent load testing and steady-state latency reporting.
+- [x] Retailer configuration foundation: BHN branding, scenes, seed sources, routes,
+  judgments, and Redis names are now defined in one demo-only retailer contract.
+- [x] Retailer Redis isolation: BHN data, Redis Search, SemanticRouter, caches, events,
+  and evaluations use the `demo:bhn:*` namespace.
+- [x] Retailer skinning foundation: the API publishes the registered retailer list, while
+  the React experience config owns the retailer palette and guided-demo copy. The current
+  configuration route prepares the retailer context outside the customer-facing demo.
+- [x] Retailer Milestone 4: the internal Demo Foundry accepts a ChatGPT-generated JSON or text
+  catalog with a compact brand palette, creates an isolated RedisVL index and router at runtime,
+  derives five catalog-aware e-commerce walkthrough paths, and restores saved custom retailer
+  configurations after API restart.
 
 Milestone 2 generates local Hugging Face embeddings with RedisVL during seed, caches normalized query embeddings in Redis, runs tenant-filtered lexical and vector retrieval, and fuses the ranked candidates with Reciprocal Rank Fusion. Exact active brand and alias matches are guarded at rank one after fusion.
 
@@ -36,15 +47,36 @@ Milestone 3 re-scores the top hybrid candidates with RedisVL's local Hugging Fac
 
 The application default remains a conservative 250 ms re-ranker timeout. The CPU-only Docker demo uses a 3-second budget unless `RERANK_TIMEOUT_MS` is set, so the warmed local cross-encoder can be shown during a presentation.
 
-Milestone 4 routes each query through RedisVL `SemanticRouter`, using version-controlled references stored under `demo:routes`. Confident balance, activation, order-status, and support intents return a simulated action card. Low-confidence or unavailable-router decisions fall back safely to product search, with the selected intent, distance, threshold, source, and timing shown in the demo panel.
+Milestone 4 routes each query through RedisVL `SemanticRouter`, using version-controlled references stored under `demo:bhn:routes`. Confident balance, activation, order-status, and support intents return a simulated action card. Low-confidence or unavailable-router decisions fall back safely to product search, with the selected intent, distance, threshold, source, and timing shown in the demo panel.
 
 Milestone 5 loads synthetic personas, tenant policy caps, and tenant-eligible promotions from Redis on each request. It applies bounded boosts only after retrieval, exposes every contribution on result cards, and runs exact-brand protection after policy scoring. Promotions only affect candidates already returned by relevance retrieval and only when their category is eligible.
 
-Milestone 6 adds a version-controlled golden-query scorecard for baseline, hybrid, and re-ranked paths. Each run reports Hit@1, MRR, NDCG@10, Recall@25, route accuracy, and p50/p95 latency, then saves its index and model configuration under `demo:evaluation:*`. The UI includes presenter scenes, compact synthetic event telemetry, and result-selection capture under `demo:search:event:*`.
+Milestone 6 adds a version-controlled golden-query scorecard for baseline, hybrid, and re-ranked paths. Each run reports Hit@1, MRR, NDCG@10, Recall@25, route accuracy, and p50/p95 latency, then saves its index and model configuration under `demo:bhn:evaluation:*`. The UI includes presenter scenes, compact synthetic event telemetry, and result-selection capture under `demo:bhn:search:event:*`.
 
-Milestone 7 adds a bounded load test alongside the scorecard. After one normal re-ranked request warms the selected local cross-encoder, the UI runs four product judgments through baseline, hybrid, and re-ranked retrieval three times each. At concurrency `2`, each mode records 12 requests while allowing two requests to overlap; the resulting p50 and p95 distinguish steady-state performance from initial model loading. The report also separates safe routing fallbacks from failed requests. Use concurrency `4` only as a local CPU-pressure observation, not as a production capacity benchmark. Every run retains the selected re-ranker configuration and is saved under `demo:evaluation-load:*`.
+Milestone 7 adds a bounded load test alongside the scorecard. After one normal re-ranked request warms the selected local cross-encoder, the UI runs four product judgments through baseline, hybrid, and re-ranked retrieval three times each. At concurrency `2`, each mode records 12 requests while allowing two requests to overlap; the resulting p50 and p95 distinguish steady-state performance from initial model loading. The report also separates safe routing fallbacks from failed requests. Use concurrency `4` only as a local CPU-pressure observation, not as a production capacity benchmark. Every run retains the selected re-ranker configuration and is saved under `demo:bhn:evaluation-load:*`.
 
-The brand and alias prefix index also powers Redis-backed typeahead. Enter at least three characters of a partial brand, such as `Star`, and the request field offers tenant-filtered matches before a full retrieval run. Selecting a suggestion fills the request; baseline, hybrid, and re-ranked retrieval remain separate stages.
+The home-screen demo controls leave prefix search and Redis-backed typeahead off by default. The **Short-prefix discovery** path makes the contrast explicit: literal `Star` first finds `AMC Theatres eGift` through its `movie star` catalog alias, then brand prefix search adds a tenant-filtered prefix lookup that promotes `Starbucks eGift`. Enable **Typeahead suggestions** to show the separate low-latency prefix lookup while typing at least three characters. Selecting a suggestion fills the request; baseline, hybrid, and re-ranked retrieval remain separate stages.
+
+## Retailer Skins
+
+The frontend resolves the active retailer from this browser's internal configuration route:
+`http://localhost:5173/?view=configuration`. That route stores the choice locally and adds an
+`X-Demo-Retailer` header to API calls. The customer-facing demo has no retailer selector. The
+API resolves that header to a dedicated catalog, router, telemetry, and evaluation service;
+Redis data remains isolated: BHN uses `demo:bhn:*`, and every Foundry-created retailer receives
+its own `demo:<retailer-id>:*` namespace. The frontend experience in `frontend/src/retailers/`
+supplies the BHN palette and a generated experience for each Foundry catalog without copying the
+application. New Foundry payloads include an explicit `demo_paths` object for the customer-search
+prompt, exact-product prompt, bounded preference profile, and a short-prefix discovery scenario;
+the importer validates that the configured preference category exists in the catalog and that the
+prefix scenario has both literal and intended-prefix evidence. Older payloads use catalog-derived
+values as a compatibility fallback. Every generated walkthrough also includes an e-commerce
+order-support route for SemanticRouter.
+
+Use [the Demo Foundry example](docs/demo-foundry-example.json) as a valid upload shape. The
+configuration screen also includes a copyable ChatGPT prompt that requests exactly 360 original
+synthetic products and four website-inspired palette colors. The compact example is a schema
+reference; a generated catalog must contain all 360 products before it can be imported.
 
 ## Local Commands
 
@@ -85,7 +117,7 @@ The presenter control includes the same four demo scenes in the UI: relevance co
 - `redis`: Redis 8.4 local instance.
 - `seed`: idempotent backend command that creates indexes and loads data.
 
-Gift-card products use Redis Hashes with the namespace `demo:giftcard:{id}`. The Redis Search physical index is `demo:giftcards:v1`; the API queries the alias `demo:giftcards`. Hash storage is documented in [ADR 0001](docs/decisions/0001-redis-hash-search-index.md).
+Gift-card products use Redis Hashes with the namespace `demo:bhn:giftcard:{id}`. The Redis Search physical index is `demo:bhn:giftcards:v1`; the API queries the alias `demo:bhn:giftcards`. BHN's old shared `demo:*` state is removed during the demo seed migration, ensuring future retailers receive independent keys and indexes. The configuration lives in `backend/app/retailers/bhn.py`. Hash storage is documented in [ADR 0001](docs/decisions/0001-redis-hash-search-index.md).
 
 ## API Highlights
 
@@ -102,6 +134,11 @@ Gift-card products use Redis Hashes with the namespace `demo:giftcard:{id}`. The
 ## Configuration
 
 See `.env.example` for all supported variables. Defaults run locally with no paid API keys.
+
+`RETAILER_ID` defaults to `bhn`, the sole built-in retailer. Demo Foundry imports are restored
+from Redis at API startup. A custom demo can be deleted from the internal configuration page,
+which removes its isolated catalog, Redis Search index, routing data, telemetry, evaluations, and
+saved configuration. The BHN demo is protected.
 
 Optional Cohere and VoyageAI re-ranker settings are present but disabled unless credentials are supplied. The default provider attempts RedisVL `HFCrossEncoderReranker`; if local model loading fails, the API falls back to hybrid ordering and reports that fallback in diagnostics.
 

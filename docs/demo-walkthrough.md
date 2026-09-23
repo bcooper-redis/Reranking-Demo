@@ -2,15 +2,17 @@
 
 ## Preparation
 
-Open `http://localhost:5173` and confirm that the header says Redis connected. The app starts on the Teacher appreciation path. Keep Technical details closed until someone asks how a result was produced.
+Open `http://localhost:5173` and confirm that the header says Redis connected. The app starts on the Customer search path. Keep Technical details closed until someone asks how a result was produced.
 
 ## Opening
 
 GiftFind is a small BHN gift-card discovery experience built to make each RedisVL decision visible. Take one customer request at a time, add one capability, and inspect the improvement before moving on.
 
-## Path 1: Teacher appreciation
+The current experience is selected from the BHN demo configuration. Its branding, catalog fixture source, SemanticRouter references, scorecard judgments, Redis key/index names, and five presenter paths are defined independently so a later retailer demo can use its own data and story without copying the application.
 
-Select **Teacher appreciation**.
+## Path 1: Customer search
+
+Select **Customer search**.
 
 1. Click **Run text search**.
    Conventional full-text retrieval is useful, but it mostly rewards literal word overlap.
@@ -37,7 +39,11 @@ Select **Teacher appreciation**.
 
 ## Redis typeahead
 
-Type `Star` in the customer request field before running a search. Redis Search returns `Starbucks eGift` from the tenant-filtered brand and alias prefix index; selecting it fills the request. This is a separate low-latency Redis lookup, before lexical, vector, or re-ranking work begins.
+Use the **Demo controls** in the presenter panel to enable **Typeahead suggestions**. Type `Star` in the customer request field before running a search. Redis Search returns `Starbucks eGift` from the tenant-filtered brand and alias prefix index; selecting it fills the request. This is a separate low-latency Redis lookup, before lexical, vector, or re-ranking work begins.
+
+## Short-prefix discovery
+
+Choose **Short-prefix discovery**. The first action searches `Star` as a literal word and shows `AMC Theatres eGift`, where `movie star` is valid catalog text. Continue to the second action. The path turns on **Brand prefix search**, the retrieval trace gains `Brand and alias prefix fill`, and `Starbucks eGift` is protected at the top with visible prefix evidence. This makes the intervention visible without changing the semantic or re-ranking stages.
 
 ## Path 2: Exact-brand confidence
 

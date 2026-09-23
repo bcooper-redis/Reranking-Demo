@@ -6,6 +6,7 @@ from redis.asyncio import Redis
 
 from app.config import Settings
 from app.models.search import ProductResult
+from app.retailers import RetailerDefinition
 
 
 @dataclass(frozen=True)
@@ -20,15 +21,18 @@ class PolicyContext:
 class PolicyService:
     """Loads Redis-backed policy context and applies bounded post-relevance boosts."""
 
-    def __init__(self, settings: Settings, redis_client: Redis) -> None:
+    def __init__(
+        self, settings: Settings, redis_client: Redis, retailer: RetailerDefinition | None = None
+    ) -> None:
         self._settings = settings
         self._redis = redis_client
+        self._retailer = retailer or settings.retailer
 
     async def load_context(
         self, tenant_id: str, profile_id: str, promotion_id: str | None
     ) -> PolicyContext:
-        tenant = await self._read_record("demo:tenant", tenant_id, "tenant")
-        profile = await self._read_record("demo:profile", profile_id, "profile")
+        tenant = await self._read_record("tenant", tenant_id, "tenant")
+        profile = await self._read_record("profile", profile_id, "profile")
         promotion = None
         if promotion_id:
             if promotion_id not in tenant.get("promotion_ids", []):
@@ -36,7 +40,7 @@ class PolicyService:
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail="Promotion is not available for this tenant",
                 )
-            promotion = await self._read_record("demo:promotion", promotion_id, "promotion")
+            promotion = await self._read_record("promotion", promotion_id, "promotion")
             if tenant_id not in promotion.get("eligible_tenant_ids", []):
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -97,8 +101,8 @@ class PolicyService:
             ),
         )
 
-    async def _read_record(self, prefix: str, record_id: str, label: str) -> dict[str, object]:
-        value = await self._redis.get(f"{prefix}:{record_id}")
+    async def _read_record(self, record_type: str, record_id: str, label: str) -> dict[str, object]:
+        value = await self._redis.get(self._retailer.redis.key(record_type, record_id))
         if value is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

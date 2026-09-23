@@ -3,18 +3,21 @@ from redis.exceptions import ResponseError
 from redisvl.index import AsyncSearchIndex
 
 from app.config import Settings
+from app.retailers import RetailerDefinition
 
 
-def physical_index_name(settings: Settings) -> str:
-    return f"{settings.redis_index_alias}:{settings.redis_index_version}"
+def physical_index_name(settings: Settings, retailer: RetailerDefinition) -> str:
+    return f"{retailer.redis.catalog_index_alias}:{settings.redis_index_version}"
 
 
-def catalog_schema(settings: Settings, *, name: str | None = None) -> dict[str, object]:
+def catalog_schema(
+    settings: Settings, retailer: RetailerDefinition, *, name: str | None = None
+) -> dict[str, object]:
     """RedisVL schema for flat catalog Hashes and a future-compatible vector field."""
     return {
         "index": {
-            "name": name or physical_index_name(settings),
-            "prefix": "demo:giftcard",
+            "name": name or physical_index_name(settings, retailer),
+            "prefix": retailer.redis.catalog_document_prefix,
             "storage_type": "hash",
         },
         "fields": [
@@ -58,14 +61,18 @@ def catalog_schema(settings: Settings, *, name: str | None = None) -> dict[str, 
 class CatalogIndex:
     """Owns the RedisVL index lifecycle and its stable Redis Search alias."""
 
-    def __init__(self, settings: Settings, redis_client: Redis) -> None:
+    def __init__(
+        self, settings: Settings, redis_client: Redis, retailer: RetailerDefinition
+    ) -> None:
         self._settings = settings
         self._redis = redis_client
+        self._retailer = retailer
         self._physical = AsyncSearchIndex.from_dict(
-            catalog_schema(settings), redis_client=redis_client
+            catalog_schema(settings, retailer), redis_client=redis_client
         )
         self._alias = AsyncSearchIndex.from_dict(
-            catalog_schema(settings, name=settings.redis_index_alias), redis_client=redis_client
+            catalog_schema(settings, retailer, name=retailer.redis.catalog_index_alias),
+            redis_client=redis_client,
         )
 
     @property
@@ -74,7 +81,9 @@ class CatalogIndex:
 
     async def reset(self) -> None:
         try:
-            await self._redis.execute_command("FT.ALIASDEL", self._settings.redis_index_alias)
+            await self._redis.execute_command(
+                "FT.ALIASDEL", self._retailer.redis.catalog_index_alias
+            )
         except ResponseError:
             pass
         if await self._physical.exists():
@@ -83,14 +92,14 @@ class CatalogIndex:
     async def ensure_created(self) -> None:
         if not await self._physical.exists():
             await self._physical.create()
-        physical_name = physical_index_name(self._settings)
+        physical_name = physical_index_name(self._settings, self._retailer)
         try:
             await self._redis.execute_command(
-                "FT.ALIASUPDATE", self._settings.redis_index_alias, physical_name
+                "FT.ALIASUPDATE", self._retailer.redis.catalog_index_alias, physical_name
             )
         except ResponseError:
             await self._redis.execute_command(
-                "FT.ALIASADD", self._settings.redis_index_alias, physical_name
+                "FT.ALIASADD", self._retailer.redis.catalog_index_alias, physical_name
             )
 
     async def load(self, records: list[dict[str, object]]) -> list[str]:

@@ -8,11 +8,14 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from redis.exceptions import RedisError
 
-from app.api import health_router, operations_router, search_router
+from app.api import health_router, onboarding_router, operations_router, search_router
 from app.config import Settings, get_settings
 from app.evaluation import EvaluationService
 from app.redis import RedisClient
+from app.retailers import RETAILERS
+from app.retailers.onboarding import load_retailers
 from app.retrieval import CatalogService
 from app.telemetry import TelemetryService
 
@@ -31,15 +34,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.settings = active_settings
         app.state.redis = RedisClient(active_settings)
-        app.state.catalog = CatalogService(active_settings, app.state.redis.client)
-        app.state.evaluation = EvaluationService(
-            active_settings, app.state.redis.client, app.state.catalog
-        )
-        app.state.telemetry = TelemetryService(app.state.redis.client)
+        try:
+            dynamic_retailers = await load_retailers(app.state.redis.client)
+        except RedisError:
+            dynamic_retailers = {}
+        app.state.retailers = {**RETAILERS, **dynamic_retailers}
+        app.state.catalogs = {
+            retailer_id: CatalogService(active_settings, app.state.redis.client, retailer)
+            for retailer_id, retailer in app.state.retailers.items()
+        }
+        app.state.evaluations = {
+            retailer_id: EvaluationService(active_settings, app.state.redis.client, catalog)
+            for retailer_id, catalog in app.state.catalogs.items()
+        }
+        app.state.telemetries = {
+            retailer_id: TelemetryService(app.state.redis.client, retailer.redis)
+            for retailer_id, retailer in app.state.retailers.items()
+        }
         try:
             yield
         finally:
-            await app.state.catalog.close()
+            for catalog in app.state.catalogs.values():
+                await catalog.close()
             await app.state.redis.close()
 
     app = FastAPI(
@@ -51,8 +67,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         CORSMiddleware,
         allow_origins=[str(active_settings.frontend_origin).rstrip("/")],
         allow_credentials=False,
-        allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type", "X-Request-ID"],
+        allow_methods=["GET", "POST", "DELETE"],
+        allow_headers=["Content-Type", "X-Request-ID", "X-Demo-Retailer"],
     )
 
     @app.middleware("http")
@@ -63,14 +79,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             response = await call_next(request)
         except Exception:
             duration_ms = (time.perf_counter() - started_at) * 1_000
-            app.state.telemetry.record_request(status_code=500, duration_ms=duration_ms)
+            app.state.telemetries.get(
+                request.headers.get("X-Demo-Retailer", active_settings.retailer_id),
+                app.state.telemetries[active_settings.retailer_id],
+            ).record_request(status_code=500, duration_ms=duration_ms)
             logging.getLogger(__name__).exception(
                 "request_failed",
                 extra={"request_id": request_id, "path": request.url.path},
             )
             raise
         duration_ms = (time.perf_counter() - started_at) * 1_000
-        app.state.telemetry.record_request(
+        app.state.telemetries.get(
+            request.headers.get("X-Demo-Retailer", active_settings.retailer_id),
+            app.state.telemetries[active_settings.retailer_id],
+        ).record_request(
             status_code=response.status_code,
             duration_ms=duration_ms,
         )
@@ -98,6 +120,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health_router)
     app.include_router(search_router)
     app.include_router(operations_router)
+    app.include_router(onboarding_router)
     return app
 
 

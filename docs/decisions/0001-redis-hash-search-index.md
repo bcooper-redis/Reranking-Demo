@@ -10,7 +10,7 @@ The product requirements prefer Redis JSON for catalog documents but allow Hash 
 
 ## Decision
 
-Gift-card products are stored as Redis Hashes under `demo:giftcard:{id}` and indexed by Redis Search through the `demo:giftcards` alias. Arrays are flattened into pipe-separated TAG fields, and vector embeddings are stored as FLOAT32 byte buffers.
+Gift-card products are stored as Redis Hashes under `demo:bhn:giftcard:{id}` and indexed by Redis Search through the `demo:bhn:giftcards` alias. Arrays are flattened into pipe-separated TAG fields, and vector embeddings are stored as FLOAT32 byte buffers.
 
 Profiles, tenants, promotions, routes, search events, and evaluation runs are stored as JSON strings under namespaced Redis keys.
 
@@ -20,4 +20,3 @@ Profiles, tenants, promotions, routes, search events, and evaluation runs are st
 - RedisVL can create and validate the Hash schema directly.
 - The demo does not require RedisJSON-specific commands for the main catalog path.
 - Nested document updates are less expressive than RedisJSON; that is acceptable for the synthetic catalog and documented as a local-demo trade-off.
-

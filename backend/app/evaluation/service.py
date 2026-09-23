@@ -8,7 +8,6 @@ from uuid import uuid4
 from redis.asyncio import Redis
 
 from app.config import Settings
-from app.data import GOLDEN_QUERIES
 from app.data.judgments import GoldenQuery
 from app.models.search import (
     EvaluationMetrics,
@@ -35,7 +34,7 @@ class EvaluationService:
         reranker = self._catalog.reranker_preset(reranker_id)
         measurements: dict[str, list[_Measurement]] = defaultdict(list)
         for mode in EVALUATION_MODES:
-            for golden in GOLDEN_QUERIES:
+            for golden in self._catalog.retailer.golden_queries:
                 started_at = time.perf_counter()
                 response = await self._catalog.search(
                     SearchRequest(
@@ -64,7 +63,7 @@ class EvaluationService:
             id=evaluation_id,
             created_at=datetime.now(UTC).isoformat(),
             configuration={
-                "index_alias": self._settings.redis_index_alias,
+                "index_alias": self._catalog.retailer.redis.catalog_index_alias,
                 "index_version": self._settings.redis_index_version,
                 "embedding_model": self._settings.embedding_model,
                 "reranker_id": reranker.id,
@@ -76,20 +75,22 @@ class EvaluationService:
             metrics={mode: _metrics(items) for mode, items in measurements.items()},
         )
         await self._redis.set(
-            f"demo:evaluation:{evaluation_id}",
+            self._catalog.retailer.redis.key("evaluation", evaluation_id),
             run.model_dump_json(),
         )
         return run
 
     async def get(self, evaluation_id: str) -> EvaluationRun | None:
-        value = await self._redis.get(f"demo:evaluation:{evaluation_id}")
+        value = await self._redis.get(self._catalog.retailer.redis.key("evaluation", evaluation_id))
         return EvaluationRun.model_validate_json(value) if value else None
 
     async def run_load(
         self, reranker_id: str = "minilm_l6", concurrency: int = 2, rounds: int = 3
     ) -> LoadTestRun:
         reranker = self._catalog.reranker_preset(reranker_id)
-        product_queries = [golden for golden in GOLDEN_QUERIES if golden.relevant_ids]
+        product_queries = [
+            golden for golden in self._catalog.retailer.golden_queries if golden.relevant_ids
+        ]
         metrics: dict[str, LoadTestMetrics] = {}
         for mode in EVALUATION_MODES:
             measurements = await self._run_concurrent_product_queries(
@@ -102,7 +103,7 @@ class EvaluationService:
             id=load_id,
             created_at=datetime.now(UTC).isoformat(),
             configuration={
-                "index_alias": self._settings.redis_index_alias,
+                "index_alias": self._catalog.retailer.redis.catalog_index_alias,
                 "index_version": self._settings.redis_index_version,
                 "embedding_model": self._settings.embedding_model,
                 "reranker_id": reranker.id,
@@ -115,7 +116,9 @@ class EvaluationService:
             rounds=rounds,
             metrics=metrics,
         )
-        await self._redis.set(f"demo:evaluation-load:{load_id}", run.model_dump_json())
+        await self._redis.set(
+            self._catalog.retailer.redis.key("evaluation-load", load_id), run.model_dump_json()
+        )
         return run
 
     async def _run_concurrent_product_queries(

@@ -13,6 +13,7 @@ class RedisClient:
     """Owns the application's shared Redis connection pool."""
 
     def __init__(self, settings: Settings) -> None:
+        self.settings = settings
         self._pool = ConnectionPool.from_url(
             settings.redis_url,
             decode_responses=True,
@@ -27,7 +28,7 @@ class RedisClient:
         return bool(await self.client.ping())
 
     async def initialize_runtime(self) -> None:
-        await self.client.set("demo:runtime:status", "initialized")
+        await self.client.set(self.settings.retailer.redis.key("runtime", "status"), "initialized")
 
     async def close(self) -> None:
         await self.client.aclose(close_connection_pool=True)

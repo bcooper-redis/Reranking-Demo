@@ -23,7 +23,76 @@ export type Reranker = {
   model: string;
 };
 
+export type Retailer = {
+  id: string;
+  organization_name: string;
+  experience_name: string;
+  experience_subtitle: string;
+  catalog_label: string;
+  theme: {
+    accent: string;
+    accent_strong: string;
+    accent_soft: string;
+    canvas: string;
+  } | null;
+  demo_prompts: {
+    customer_query: string;
+    exact_product_query: string;
+    preference_query: string;
+    preference_profile_id: string;
+    preference_profile_name: string;
+    preference_category: string;
+    prefix_query?: string;
+    prefix_expected_product?: string;
+  } | null;
+};
+
+export type RetailerImportPayload = {
+  organization_name: string;
+  experience_name: string;
+  catalog_label: string;
+  theme: {
+    accent: string;
+    accent_strong: string;
+    accent_soft: string;
+    canvas: string;
+  };
+  demo_paths?: {
+    customer_query: string;
+    exact_product_query: string;
+    preference_query: string;
+    preference_profile_name: string;
+    preference_category: string;
+    prefix_query: string;
+    prefix_expected_product: string;
+  };
+  products: {
+    brand_name: string;
+    description: string;
+    aliases?: string[];
+    categories: string[];
+    recipient_tags?: string[];
+    delivery_types?: string[];
+    min_price?: number;
+    max_price?: number;
+  }[];
+};
+
+export type RetailerImportResponse = {
+  retailer_id: string;
+  organization_name: string;
+  experience_name: string;
+  catalog_count: number;
+  index_alias: string;
+};
+
+export type RetailerDeleteResponse = {
+  retailer_id: string;
+};
+
 export type PublicConfig = {
+  retailer: Retailer;
+  retailers: Retailer[];
   tenants: Tenant[];
   profiles: Profile[];
   promotions: Promotion[];
@@ -173,16 +242,63 @@ export type TelemetrySnapshot = {
 };
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+const retailerStorageKey = "giftfind-demo-retailer";
+
+class ApiRequestError extends Error {
+  constructor(readonly status: number) {
+    super(`API request failed with ${status}`);
+  }
+}
+
+export function getActiveRetailerId(): string {
+  return window.localStorage.getItem(retailerStorageKey) ?? "bhn";
+}
+
+export function setActiveRetailerId(retailerId: string): void {
+  window.localStorage.setItem(retailerStorageKey, retailerId);
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`, init);
+  const headers = new Headers(init?.headers);
+  headers.set("X-Demo-Retailer", getActiveRetailerId());
+  const response = await fetch(`${apiBaseUrl}${path}`, { ...init, headers });
   if (!response.ok)
-    throw new Error(`API request failed with ${response.status}`);
+    throw new ApiRequestError(response.status);
   return (await response.json()) as T;
 }
 
-export function getPublicConfig(signal?: AbortSignal): Promise<PublicConfig> {
-  return request<PublicConfig>("/api/v1/config/public", { signal });
+export async function getPublicConfig(signal?: AbortSignal): Promise<PublicConfig> {
+  try {
+    return await request<PublicConfig>("/api/v1/config/public", { signal });
+  } catch (error) {
+    if (
+      error instanceof ApiRequestError &&
+      error.status === 400 &&
+      getActiveRetailerId() !== "bhn"
+    ) {
+      setActiveRetailerId("bhn");
+      return request<PublicConfig>("/api/v1/config/public", { signal });
+    }
+    throw error;
+  }
+}
+
+export function importRetailer(
+  payload: RetailerImportPayload,
+): Promise<RetailerImportResponse> {
+  return request<RetailerImportResponse>("/api/v1/retailers/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteRetailer(
+  retailerId: string,
+): Promise<RetailerDeleteResponse> {
+  return request<RetailerDeleteResponse>(`/api/v1/retailers/${retailerId}`, {
+    method: "DELETE",
+  });
 }
 
 export function searchCatalog(
@@ -192,6 +308,7 @@ export function searchCatalog(
   promotionId: string | null,
   mode: SearchMode,
   rerankerId: string,
+  prefixMatching: boolean,
 ): Promise<SearchResponse | ComparisonResponse> {
   return request<SearchResponse | ComparisonResponse>("/api/v1/search", {
     method: "POST",
@@ -203,6 +320,7 @@ export function searchCatalog(
       promotion_id: promotionId,
       mode,
       reranker_id: rerankerId,
+      prefix_matching: prefixMatching,
       debug: true,
     }),
   });

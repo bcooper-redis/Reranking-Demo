@@ -13,7 +13,6 @@ from redisvl.query import FilterQuery, TextQuery, VectorQuery
 from redisvl.query.filter import Num, Tag
 
 from app.config import Settings
-from app.data.catalog import DISCLAIMER
 from app.models.search import (
     AutocompleteResponse,
     ComparisonResponse,
@@ -23,6 +22,7 @@ from app.models.search import (
     PublicConfigResponse,
     RedisSearchQuery,
     RerankerOption,
+    RetailerPublicConfig,
     ScoreBreakdown,
     SearchFilters,
     SearchRequest,
@@ -33,6 +33,7 @@ from app.models.search import (
 from app.policy import PolicyContext, PolicyService
 from app.redis.catalog_index import CatalogIndex
 from app.reranking import RerankerError, RerankerProvider
+from app.retailers import RETAILERS, RetailerDefinition
 from app.routing import RoutingDecision, RoutingService
 
 RETURN_FIELDS = [
@@ -86,29 +87,42 @@ class HybridStage:
 
 
 class CatalogService:
-    def __init__(self, settings: Settings, redis_client: Redis) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        redis_client: Redis,
+        retailer: RetailerDefinition | None = None,
+    ) -> None:
         self._settings = settings
         self._redis = redis_client
-        self.index = CatalogIndex(settings, redis_client)
+        self.retailer = retailer or settings.retailer
+        self._keyspace = self.retailer.redis
+        self.index = CatalogIndex(settings, redis_client, self.retailer)
         self._embeddings = None
         self._reranker = None
         self._routing = None
-        self._policy = PolicyService(settings, redis_client)
+        self._policy = PolicyService(settings, redis_client, self.retailer)
         self._reranked_latencies: dict[str, deque[float]] = {}
 
     async def reset(self) -> None:
         await self.index.reset()
         await self._routing_service().reset()
-        await self._delete_namespaced_keys(
-            (
-                "demo:tenant:*",
-                "demo:profile:*",
-                "demo:promotion:*",
-                "demo:search:event:*",
-                "demo:evaluation:*",
-                "demo:cache:embedding:*",
-            )
-        )
+        await self._delete_namespace_keys(self._keyspace)
+
+    async def cleanup_legacy_namespaces(self) -> None:
+        """Remove the pre-isolation BHN demo state after a namespace migration."""
+        for namespace in self.retailer.legacy_namespaces:
+            if namespace == self._keyspace:
+                continue
+            legacy_retailer = replace(self.retailer, redis=namespace, legacy_namespaces=())
+            legacy_index = CatalogIndex(self._settings, self._redis, legacy_retailer)
+            await legacy_index.reset()
+            legacy_routing = RoutingService(self._settings, legacy_retailer)
+            try:
+                await legacy_routing.reset()
+            finally:
+                await legacy_routing.close()
+            await self._delete_namespace_keys(namespace)
 
     async def close(self) -> None:
         if self._routing is not None:
@@ -122,18 +136,20 @@ class CatalogService:
         promotion_records: Iterable[dict[str, object]],
     ) -> int:
         await self.index.ensure_created()
-        await self._store_json("demo:tenant", tenant_records)
-        await self._store_json("demo:profile", profile_records)
-        await self._store_json("demo:promotion", promotion_records)
+        await self._store_json(self._keyspace.key("tenant"), tenant_records)
+        await self._store_json(self._keyspace.key("profile"), profile_records)
+        await self._store_json(self._keyspace.key("promotion"), promotion_records)
         await self._embedding_service().embed_catalog(records)
         await self.index.load(records)
         await self._routing_service().ensure_initialized()
         return await self.index.count()
 
-    async def public_config(self) -> PublicConfigResponse:
-        tenant_values = await self._read_json_pattern("demo:tenant:*")
-        profile_values = await self._read_json_pattern("demo:profile:*")
-        promotion_values = await self._read_json_pattern("demo:promotion:*")
+    async def public_config(
+        self, retailers: Iterable[RetailerDefinition] | None = None
+    ) -> PublicConfigResponse:
+        tenant_values = await self._read_json_pattern(self._keyspace.pattern("tenant", "*"))
+        profile_values = await self._read_json_pattern(self._keyspace.pattern("profile", "*"))
+        promotion_values = await self._read_json_pattern(self._keyspace.pattern("promotion", "*"))
         tenants = [
             TenantOption(
                 id=tenant["id"],
@@ -144,6 +160,29 @@ class CatalogService:
             for tenant in tenant_values
         ]
         return PublicConfigResponse(
+            retailer=RetailerPublicConfig(
+                id=self.retailer.id,
+                organization_name=self.retailer.organization_name,
+                experience_name=self.retailer.experience_name,
+                experience_subtitle=self.retailer.experience_subtitle,
+                catalog_label=self.retailer.catalog_label,
+                theme=self.retailer.theme,
+                demo_prompts=self.retailer.demo_prompts,
+            ),
+            retailers=[
+                RetailerPublicConfig(
+                    id=retailer.id,
+                    organization_name=retailer.organization_name,
+                    experience_name=retailer.experience_name,
+                    experience_subtitle=retailer.experience_subtitle,
+                    catalog_label=retailer.catalog_label,
+                    theme=retailer.theme,
+                    demo_prompts=retailer.demo_prompts,
+                )
+                for retailer in sorted(
+                    retailers or RETAILERS.values(), key=lambda retailer: retailer.id
+                )
+            ],
             tenants=sorted(tenants, key=lambda tenant: tenant.id),
             profiles=sorted(
                 [
@@ -174,7 +213,7 @@ class CatalogService:
             ],
             modes=["baseline", "hybrid", "reranked", "compare"],
             catalog_count=await self.index.count(),
-            disclaimer=DISCLAIMER,
+            disclaimer=self.retailer.disclaimer,
         )
 
     async def search(self, request: SearchRequest) -> SearchResponse | ComparisonResponse:
@@ -211,9 +250,7 @@ class CatalogService:
         self._apply_routing(response, routing)
         return response
 
-    async def autocomplete(
-        self, query: str, tenant_id: str, limit: int
-    ) -> AutocompleteResponse:
+    async def autocomplete(self, query: str, tenant_id: str, limit: int) -> AutocompleteResponse:
         await self._get_tenant_or_404(tenant_id)
         normalized_query = normalize_text_query(query)
         if not normalized_query:
@@ -226,7 +263,8 @@ class CatalogService:
             query=query,
             suggestions=[
                 SearchSuggestion(
-                    id=_document_id(document), brand_name=str(document.get("brand_name", ""))
+                    id=self._document_id(document),
+                    brand_name=str(document.get("brand_name", "")),
                 )
                 for document in documents
             ],
@@ -413,7 +451,7 @@ class CatalogService:
             diagnostics={
                 "retrieval": "redisvl_text_and_vector_rrf",
                 "normalized_query": normalized_query,
-                "index_alias": self._settings.redis_index_alias,
+                "index_alias": self._keyspace.catalog_index_alias,
                 "candidate_count": len(candidates),
                 "exact_match_protection": any(candidate.exact_match for candidate in candidates),
                 "prefix_match_protection": any(candidate.prefix_match for candidate in candidates),
@@ -474,7 +512,7 @@ class CatalogService:
     async def _prefix_documents(
         self, request: SearchRequest, normalized_query: str, num_results: int
     ) -> tuple[list[dict[str, object]], RedisSearchQuery | None]:
-        if not _is_partial_brand_query(normalized_query):
+        if not request.prefix_matching or not _is_partial_brand_query(normalized_query):
             return [], None
         query = FilterQuery(
             filter_expression=self._filters(request.tenant_id, request.filters)
@@ -507,12 +545,16 @@ class CatalogService:
     ) -> list[Candidate]:
         candidates: dict[str, Candidate] = {}
         for rank, document in enumerate(lexical_documents, start=1):
-            candidate = candidates.setdefault(_document_id(document), Candidate(document=document))
+            candidate = candidates.setdefault(
+                self._document_id(document), Candidate(document=document)
+            )
             candidate.lexical_rank = rank
             candidate.lexical_score = _score(document)
             candidate.hybrid_score += reciprocal_rank_fusion(rank, self._settings.search_rrf_k)
         for rank, document in enumerate(vector_documents, start=1):
-            candidate = candidates.setdefault(_document_id(document), Candidate(document=document))
+            candidate = candidates.setdefault(
+                self._document_id(document), Candidate(document=document)
+            )
             candidate.vector_rank = rank
             candidate.vector_distance = _vector_distance(document)
             candidate.hybrid_score += reciprocal_rank_fusion(rank, self._settings.search_rrf_k)
@@ -523,16 +565,18 @@ class CatalogService:
     def _protect_exact_matches(
         self, candidates: list[Candidate], exact_documents: list[dict[str, object]]
     ) -> list[Candidate]:
-        candidate_by_id = {_document_id(candidate.document): candidate for candidate in candidates}
-        exact_ids = {_document_id(document) for document in exact_documents}
+        candidate_by_id = {
+            self._document_id(candidate.document): candidate for candidate in candidates
+        }
+        exact_ids = {self._document_id(document) for document in exact_documents}
         for document in exact_documents:
             candidate = candidate_by_id.setdefault(
-                _document_id(document), Candidate(document=document)
+                self._document_id(document), Candidate(document=document)
             )
             candidate.exact_match = True
         candidates = list(candidate_by_id.values())
         for candidate in candidates:
-            candidate.exact_match = _document_id(candidate.document) in exact_ids
+            candidate.exact_match = self._document_id(candidate.document) in exact_ids
         return sorted(
             candidates,
             key=lambda candidate: (
@@ -545,16 +589,18 @@ class CatalogService:
     def _protect_prefix_matches(
         self, candidates: list[Candidate], prefix_documents: list[dict[str, object]]
     ) -> list[Candidate]:
-        candidate_by_id = {_document_id(candidate.document): candidate for candidate in candidates}
-        prefix_ids = {_document_id(document) for document in prefix_documents}
+        candidate_by_id = {
+            self._document_id(candidate.document): candidate for candidate in candidates
+        }
+        prefix_ids = {self._document_id(document) for document in prefix_documents}
         for document in prefix_documents:
             candidate = candidate_by_id.setdefault(
-                _document_id(document), Candidate(document=document)
+                self._document_id(document), Candidate(document=document)
             )
             candidate.prefix_match = True
         candidates = list(candidate_by_id.values())
         for candidate in candidates:
-            candidate.prefix_match = _document_id(candidate.document) in prefix_ids
+            candidate.prefix_match = self._document_id(candidate.document) in prefix_ids
         return sorted(
             candidates,
             key=lambda candidate: (
@@ -573,25 +619,27 @@ class CatalogService:
             query,
             [
                 {
-                    "id": _document_id(candidate.document),
+                    "id": self._document_id(candidate.document),
                     "content": _rerank_text(candidate.document),
                 }
                 for candidate in rerankable
             ],
             reranker_id,
         )
-        candidate_by_id = {_document_id(candidate.document): candidate for candidate in rerankable}
+        candidate_by_id = {
+            self._document_id(candidate.document): candidate for candidate in rerankable
+        }
         reranked_candidates: list[Candidate] = []
         for candidate_id, raw_score in ranked:
             candidate = candidate_by_id[candidate_id]
             candidate.reranker_score = _normalize_reranker_score(raw_score)
             reranked_candidates.append(candidate)
 
-        reranked_ids = {_document_id(candidate.document) for candidate in reranked_candidates}
+        reranked_ids = {self._document_id(candidate.document) for candidate in reranked_candidates}
         reranked_candidates.extend(
             replace(candidate)
             for candidate in candidates
-            if _document_id(candidate.document) not in reranked_ids
+            if self._document_id(candidate.document) not in reranked_ids
         )
         return sorted(
             reranked_candidates,
@@ -617,7 +665,7 @@ class CatalogService:
 
     def _routing_service(self) -> RoutingService:
         if self._routing is None:
-            self._routing = RoutingService(self._settings)
+            self._routing = RoutingService(self._settings, self.retailer)
         return self._routing
 
     def _apply_policy(self, response: SearchResponse, context: PolicyContext) -> None:
@@ -660,7 +708,9 @@ class CatalogService:
         response.timings_ms["total_server"] = round(
             response.timings_ms.get("total_server", 0.0) + routing_ms, 2
         )
-        if routing.intent.fallback:
+        # A low-confidence service route is the expected outcome for ordinary product searches.
+        # Keep it in the routing decision, but do not treat it as retrieval degradation.
+        if routing.intent.fallback and routing.intent.source != "router_low_confidence":
             response.fallbacks = [routing.intent.source, *response.fallbacks]
 
     def _warm_p95_ms(self, reranker_id: str) -> float:
@@ -673,7 +723,7 @@ class CatalogService:
     ) -> RedisSearchQuery:
         return RedisSearchQuery(
             label=label,
-            statement=f"FT.SEARCH {self._settings.redis_index_alias} {query}",
+            statement=f"FT.SEARCH {self._keyspace.catalog_index_alias} {query}",
             parameters=parameters or [],
         )
 
@@ -705,11 +755,10 @@ class CatalogService:
             fallbacks=fallbacks or [],
         )
 
-    @staticmethod
-    def _to_result(candidate: Candidate, rank: int, normalized_query: str) -> ProductResult:
+    def _to_result(self, candidate: Candidate, rank: int, normalized_query: str) -> ProductResult:
         document = candidate.document
         return ProductResult(
-            id=_document_id(document),
+            id=self._document_id(document),
             brand_name=str(document.get("brand_name", "")),
             description=str(document.get("description", "")),
             categories=split_tags(str(document.get("categories", ""))),
@@ -755,11 +804,14 @@ class CatalogService:
         if self._embeddings is None:
             from app.retrieval.embeddings import EmbeddingService
 
-            self._embeddings = EmbeddingService(self._settings, self._redis)
+            self._embeddings = EmbeddingService(self._settings, self._redis, self.retailer)
         return self._embeddings
 
+    def _document_id(self, document: dict[str, object]) -> str:
+        return _document_id(document, self._keyspace.catalog_document_prefix)
+
     async def _get_tenant_or_404(self, tenant_id: str) -> dict[str, object]:
-        value = await self._redis.get(f"demo:tenant:{tenant_id}")
+        value = await self._redis.get(self._keyspace.key("tenant", tenant_id))
         if value is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown tenant: {tenant_id}"
@@ -794,9 +846,25 @@ class CatalogService:
                 if cursor == 0:
                     break
 
+    async def _delete_namespace_keys(self, namespace) -> None:
+        await self._delete_namespaced_keys(
+            (
+                namespace.pattern(namespace.catalog_key_segment, "*"),
+                namespace.pattern("tenant", "*"),
+                namespace.pattern("profile", "*"),
+                namespace.pattern("promotion", "*"),
+                namespace.pattern("search", "event", "*"),
+                namespace.pattern("evaluation", "*"),
+                namespace.pattern("evaluation-load", "*"),
+                namespace.pattern("cache", "embedding", "*"),
+                namespace.pattern("runtime", "*"),
+                f"{namespace.router_name}:*",
+            )
+        )
 
-def _document_id(document: dict[str, object]) -> str:
-    return str(document.get("id", "")).removeprefix("demo:giftcard:")
+
+def _document_id(document: dict[str, object], catalog_prefix: str) -> str:
+    return str(document.get("id", "")).removeprefix(f"{catalog_prefix}:")
 
 
 def _is_partial_brand_query(normalized_query: str) -> bool:

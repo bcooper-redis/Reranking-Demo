@@ -30,6 +30,7 @@ class SearchRequest(BaseModel):
     promotion_id: str | None = Field(default=None, max_length=80)
     mode: SearchMode = "hybrid"
     reranker_id: str = Field(default="minilm_l6", min_length=1, max_length=80)
+    prefix_matching: bool = True
     filters: SearchFilters = Field(default_factory=SearchFilters)
     limit: int = Field(default=10, ge=1, le=25)
     debug: bool = False
@@ -210,7 +211,19 @@ class RerankerOption(BaseModel):
     model: str
 
 
+class RetailerPublicConfig(BaseModel):
+    id: str
+    organization_name: str
+    experience_name: str
+    experience_subtitle: str
+    catalog_label: str
+    theme: dict[str, str] | None = None
+    demo_prompts: dict[str, str] | None = None
+
+
 class PublicConfigResponse(BaseModel):
+    retailer: RetailerPublicConfig
+    retailers: list[RetailerPublicConfig]
     tenants: list[TenantOption]
     profiles: list[ProfileOption]
     promotions: list[PromotionOption]

@@ -21,6 +21,31 @@ def test_catalog_indexes_brand_and_alias_prefixes_for_partial_queries() -> None:
     assert "star" not in catalog["gc_138"]["brand_alias_prefixes"].split("|")
 
 
+def test_short_prefix_walkthrough_has_a_real_literal_and_prefix_contrast() -> None:
+    catalog = {record["id"]: record for record in generate_catalog(360)}
+
+    assert "movie star" in catalog["gc_amc"]["aliases"].lower()
+    assert "star" not in catalog["gc_starbucks"]["aliases"].lower().split()
+    assert "star" not in catalog["gc_starbucks"]["description"].lower().split()
+
+
+def test_bhn_walkthrough_product_prompts_have_seeded_catalog_evidence() -> None:
+    catalog = {record["id"]: record for record in generate_catalog(360)}
+
+    teacher_coffee = catalog["gc_starbucks"]
+    assert {"coffee", "teacher"}.issubset(
+        set(teacher_coffee["categories"].split("|"))
+        | set(teacher_coffee["recipient_tags"].split("|"))
+    )
+
+    best_buy = catalog["gc_best_buy"]
+    assert best_buy["brand_name"] == "Best Buy"
+
+    gamer_gift = catalog["gc_minecraft_dungeons"]
+    assert "gaming" in gamer_gift["categories"].split("|")
+    assert "gamer" in gamer_gift["recipient_tags"].split("|")
+
+
 def test_query_normalization_removes_redis_query_syntax() -> None:
     assert normalize_text_query("H-E-B @ grocery!") == "h e b grocery"
 

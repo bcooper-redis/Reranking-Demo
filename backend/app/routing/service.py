@@ -9,8 +9,8 @@ from redisvl.extensions.router.schema import Route
 from redisvl.utils.vectorize import HFTextVectorizer
 
 from app.config import Settings
-from app.data import ACTION_CARDS, DETERMINISTIC_ACTIONS, ROUTES
 from app.models.search import ActionCard, IntentDecision
+from app.retailers import RetailerDefinition
 
 
 @dataclass
@@ -23,8 +23,9 @@ class RoutingDecision:
 class RoutingService:
     """Owns the RedisVL SemanticRouter and its safe product-search fallback."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, retailer: RetailerDefinition | None = None) -> None:
         self._settings = settings
+        self._retailer = retailer or settings.retailer
         self._client: Redis | None = None
         self._router_task: asyncio.Task[SemanticRouter] | None = None
 
@@ -44,7 +45,7 @@ class RoutingService:
         if match.name is None:
             return self._fallback(query, "router_low_confidence", started_at)
 
-        route = next(route for route in ROUTES if route["name"] == match.name)
+        route = next(route for route in self._retailer.routes if route["name"] == match.name)
         distance = float(match.distance) if match.distance is not None else None
         intent = IntentDecision(
             name=match.name,
@@ -54,7 +55,7 @@ class RoutingService:
             fallback=False,
             source="redisvl_semantic_router",
         )
-        action_data = ACTION_CARDS.get(match.name)
+        action_data = self._retailer.action_cards.get(match.name)
         action = ActionCard(intent=match.name, **action_data) if action_data else None
         return RoutingDecision(
             intent=intent,
@@ -92,8 +93,8 @@ class RoutingService:
             socket_timeout=self._settings.redis_socket_timeout_seconds,
         )
         return SemanticRouter(
-            name=self._settings.router_name,
-            routes=[Route(**route) for route in ROUTES],
+            name=self._retailer.redis.router_name,
+            routes=[Route(**route) for route in self._retailer.routes],
             vectorizer=HFTextVectorizer(model=self._settings.embedding_model),
             redis_client=self._client,
             overwrite=False,
@@ -102,10 +103,10 @@ class RoutingService:
     def _reset_sync(self) -> None:
         client = self._client or Redis.from_url(self._settings.redis_url, decode_responses=True)
         try:
-            client.execute_command("FT.DROPINDEX", self._settings.router_name, "DD")
+            client.execute_command("FT.DROPINDEX", self._retailer.redis.router_name, "DD")
         except ResponseError:
             pass
-        client.delete(f"{self._settings.router_name}:route_config")
+        client.delete(f"{self._retailer.redis.router_name}:route_config")
         if self._client is None:
             client.close()
         self._router_task = None
@@ -125,11 +126,11 @@ class RoutingService:
         )
 
     def _fallback(self, query: str, reason: str, started_at: float) -> RoutingDecision:
-        route_name = DETERMINISTIC_ACTIONS.get(self._normalize_query(query))
+        route_name = self._retailer.deterministic_actions.get(self._normalize_query(query))
         if route_name is None:
             return self._product_fallback(reason, started_at)
 
-        action_data = ACTION_CARDS[route_name]
+        action_data = self._retailer.action_cards[route_name]
         return RoutingDecision(
             intent=IntentDecision(
                 name=route_name,

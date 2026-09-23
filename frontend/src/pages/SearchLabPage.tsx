@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { FormEvent, KeyboardEvent } from "react";
+import type { CSSProperties, FormEvent, KeyboardEvent } from "react";
 
 import { getReadiness, type Readiness } from "../api/health";
 import {
@@ -18,155 +18,42 @@ import {
   type SearchSuggestion,
   type TelemetrySnapshot,
 } from "../api/search";
+import {
+  getRetailerExperience,
+  type DemoPath,
+  type RetailerTheme,
+} from "../retailers";
 
 type PageState =
   | { kind: "loading" }
   | { kind: "ready"; config: PublicConfig; readiness: Readiness }
   | { kind: "error" };
 
-type DemoStep = {
-  title: string;
-  actionLabel: string;
-  detail: string;
-  narration: string;
-  mode: Exclude<SearchMode, "compare">;
-  profileId: string;
-  promotionId: string | null;
-};
+const BHN_DEMO_PATHS: DemoPath[] = getRetailerExperience("bhn").demoPaths;
 
-type DemoPath = {
-  id: string;
-  label: string;
-  summary: string;
-  query: string;
-  steps: DemoStep[];
-};
+const DEMO_PATHS: DemoPath[] = BHN_DEMO_PATHS;
 
-const DEMO_PATHS: DemoPath[] = [
-  {
-    id: "teacher-relevance",
-    label: "Teacher appreciation",
-    summary:
-      "Show why text, semantic retrieval, and re-ranking produce different answers.",
-    query: "coffee gift for my child's teacher",
-    steps: [
-      {
-        title: "Start with text retrieval",
-        actionLabel: "Run text search",
-        detail: "Text retrieval favors literal coffee and teacher terms.",
-        narration:
-          "We begin with the familiar search pattern: match the words the customer typed.",
-        mode: "baseline",
-        profileId: "anonymous",
-        promotionId: null,
-      },
-      {
-        title: "Add semantic retrieval",
-        actionLabel: "Add semantic signal",
-        detail:
-          "Redis combines text and vector candidates using reciprocal-rank fusion.",
-        narration:
-          "Now RedisVL understands related meaning, so a thoughtful teacher gift can compete even when it shares fewer words.",
-        mode: "hybrid",
-        profileId: "anonymous",
-        promotionId: null,
-      },
-      {
-        title: "Re-rank the candidates",
-        actionLabel: "Run cross-encoder",
-        detail:
-          "The cross-encoder reads the full request against each hybrid candidate before choosing the final order.",
-        narration:
-          "Only after Redis has found a tight candidate set do we spend the extra work to judge the whole request against each card.",
-        mode: "reranked",
-        profileId: "anonymous",
-        promotionId: null,
-      },
-    ],
-  },
-  {
-    id: "exact-brand",
-    label: "Exact-brand confidence",
-    summary:
-      "Show that a precise brand request remains protected while the retrieval stack gets smarter.",
-    query: "Best Buy",
-    steps: [
-      {
-        title: "Retrieve brand candidates",
-        actionLabel: "Find Best Buy",
-        detail:
-          "Hybrid retrieval brings together literal brand matches and related gift-card candidates.",
-        narration:
-          "For an explicit brand request, relevance starts with honoring the brand the customer actually named.",
-        mode: "hybrid",
-        profileId: "anonymous",
-        promotionId: null,
-      },
-      {
-        title: "Verify the final ranking",
-        actionLabel: "Verify exact match",
-        detail:
-          "Re-ranking uses the full request while the exact-brand guardrail keeps the named brand prominent.",
-        narration:
-          "The re-ranker adds nuance without losing trust: an exact brand request should not be displaced by a merely similar card.",
-        mode: "reranked",
-        profileId: "anonymous",
-        promotionId: null,
-      },
-    ],
-  },
-  {
-    id: "service-routing",
-    label: "Service routing",
-    summary:
-      "Show SemanticRouter sending an operational request to the right action instead of product search.",
-    query: "check my balance",
-    steps: [
-      {
-        title: "Classify the request",
-        actionLabel: "Route this request",
-        detail:
-          "SemanticRouter recognizes a balance inquiry and returns the correct self-service journey without catalog retrieval.",
-        narration:
-          "Not every customer request is a product search. RedisVL classifies the intent first, then routes directly to the useful action.",
-        mode: "baseline",
-        profileId: "anonymous",
-        promotionId: null,
-      },
-    ],
-  },
-  {
-    id: "personalization",
-    label: "Bounded personalization",
-    summary:
-      "Show a transparent profile signal moving eligible electronics cards without changing retrieval itself.",
-    query: "a birthday gift for a gamer",
-    steps: [
-      {
-        title: "Search without a profile",
-        actionLabel: "Search anonymously",
-        detail:
-          "The re-ranker orders results only from the customer request and catalog evidence, without a profile preference.",
-        narration:
-          "First, this is the neutral answer: same retrieval and re-ranking pipeline, no profile signal applied.",
-        mode: "reranked",
-        profileId: "anonymous",
-        promotionId: null,
-      },
-      {
-        title: "Apply a declared profile",
-        actionLabel: "Apply Tech Buyer profile",
-        detail:
-          "Eligible electronics and gaming cards receive a bounded +0.09 policy contribution; the result evidence and technical details remain visible.",
-        narration:
-          "Now we add one declared preference, not a black box. The audience can see that policy signal and its contribution separately.",
-        mode: "reranked",
-        profileId: "tech_buyer",
-        promotionId: null,
-      },
-    ],
-  },
-];
+function retailerThemeStyle(theme: RetailerTheme): CSSProperties {
+  return {
+    "--retailer-accent": theme.accent,
+    "--retailer-accent-border": theme.accentBorder,
+    "--retailer-accent-strong": theme.accentStrong,
+    "--retailer-accent-soft": theme.accentSoft,
+    "--retailer-body-muted": theme.bodyMuted,
+    "--retailer-canvas": theme.canvas,
+    "--retailer-code-surface": theme.codeSurface,
+    "--retailer-heading": theme.heading,
+    "--retailer-ink": theme.ink,
+    "--retailer-muted": theme.muted,
+    "--retailer-panel": theme.panel,
+    "--retailer-border": theme.border,
+    "--retailer-border-soft": theme.borderSoft,
+    "--retailer-focus": theme.focus,
+    "--retailer-success-ink": theme.successInk,
+    "--retailer-success-soft": theme.successSoft,
+    "--retailer-subtle": theme.subtle,
+  } as CSSProperties;
+}
 
 function ResultList({
   response,
@@ -314,6 +201,9 @@ function formatTiming(value: number | undefined): string {
 function routeDetail(response: SearchResponse): string {
   const intent = response.intent;
   if (!intent) return "Waiting for a route decision.";
+  if (intent.source === "router_low_confidence") {
+    return "No service route matched this product request, so Redis continued with product retrieval.";
+  }
   if (intent.fallback) {
     return `No confident route was available, so ${intent.name.replaceAll("_", " ")} continued as the safe fallback (${intent.source.replaceAll("_", " ")}).`;
   }
@@ -820,13 +710,20 @@ function RedisQueryPanel({
 
 export function SearchLabPage() {
   const [page, setPage] = useState<PageState>({ kind: "loading" });
-  const tenantId = "general";
+  const tenantId =
+    page.kind === "ready"
+      ? (page.config.tenants.find((tenant) => tenant.id === "general")?.id ??
+        page.config.tenants[0]?.id ??
+        "general")
+      : "general";
   const [pathId, setPathId] = useState(DEMO_PATHS[0].id);
   const [activeStepIndex, setActiveStepIndex] = useState(0);
   const [query, setQuery] = useState(DEMO_PATHS[0].query);
   const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
   const [isSuggestionOpen, setIsSuggestionOpen] = useState(false);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
+  const [prefixMatchingEnabled, setPrefixMatchingEnabled] = useState(false);
+  const [typeaheadEnabled, setTypeaheadEnabled] = useState(false);
   const [rerankerId, setRerankerId] = useState("minilm_l6");
   const [journey, setJourney] = useState<SearchResponse[]>([]);
   const [search, setSearch] = useState<SearchResponse | null>(null);
@@ -839,6 +736,8 @@ export function SearchLabPage() {
   const [isLoadTesting, setIsLoadTesting] = useState(false);
   const [loadConcurrency, setLoadConcurrency] = useState(2);
   const [telemetry, setTelemetry] = useState<TelemetrySnapshot | null>(null);
+  const selectedRetailerId =
+    page.kind === "ready" ? page.config.retailer.id : null;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -854,8 +753,25 @@ export function SearchLabPage() {
   }, []);
 
   useEffect(() => {
+    if (!selectedRetailerId) return;
+    const nextPath = getRetailerExperience(
+      selectedRetailerId,
+      page.kind === "ready" ? page.config.retailer.theme : null,
+      page.kind === "ready" ? page.config.retailer.demo_prompts : null,
+    ).demoPaths[0];
+    setPathId(nextPath.id);
+    setQuery(nextPath.query);
+    setActiveStepIndex(0);
+    setJourney([]);
+    setSearch(null);
+    setRoundTripMs(null);
+    setSearchError(false);
+  }, [page, selectedRetailerId]);
+
+  useEffect(() => {
     const normalizedQuery = query.trim();
     if (
+      !typeaheadEnabled ||
       normalizedQuery.length < 3 ||
       normalizedQuery.length > 40 ||
       normalizedQuery.split(/\s+/).length > 3
@@ -879,11 +795,17 @@ export function SearchLabPage() {
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [query, tenantId]);
+  }, [query, tenantId, typeaheadEnabled]);
 
   const config = page.kind === "ready" ? page.config : null;
+  const retailerExperience = getRetailerExperience(
+    config?.retailer.id ?? "bhn",
+    config?.retailer.theme ?? null,
+    config?.retailer.demo_prompts ?? null,
+  );
+  const demoPaths = retailerExperience.demoPaths;
   const activePath =
-    DEMO_PATHS.find((candidate) => candidate.id === pathId) ?? DEMO_PATHS[0];
+    demoPaths.find((candidate) => candidate.id === pathId) ?? demoPaths[0];
   const activeStep = activePath.steps[activeStepIndex];
   const activeResponse = journey[activeStepIndex] ?? null;
   const previousResponse =
@@ -916,6 +838,7 @@ export function SearchLabPage() {
         activeStep.promotionId,
         activeStep.mode,
         rerankerId,
+        prefixMatchingEnabled,
       );
       if (response.mode === "compare") throw new Error("Unexpected comparison");
       setSearch(response);
@@ -959,10 +882,11 @@ export function SearchLabPage() {
 
   function choosePath(nextPathId: string) {
     const nextPath =
-      DEMO_PATHS.find((candidate) => candidate.id === nextPathId) ??
-      DEMO_PATHS[0];
+      demoPaths.find((candidate) => candidate.id === nextPathId) ??
+      demoPaths[0];
     setPathId(nextPath.id);
     setQuery(nextPath.query);
+    setPrefixMatchingEnabled(nextPath.steps[0].prefixMatching ?? false);
     setSuggestions([]);
     setIsSuggestionOpen(false);
     setActiveSuggestionIndex(-1);
@@ -975,6 +899,7 @@ export function SearchLabPage() {
 
   function restartPath() {
     setQuery(activePath.query);
+    setPrefixMatchingEnabled(activePath.steps[0].prefixMatching ?? false);
     setSuggestions([]);
     setIsSuggestionOpen(false);
     setActiveSuggestionIndex(-1);
@@ -1016,22 +941,40 @@ export function SearchLabPage() {
   const hasNextStep = activeStepIndex < activePath.steps.length - 1;
 
   return (
-    <main className="search-page">
+    <main
+      className="search-page"
+      data-retailer={retailerExperience.id}
+      style={retailerThemeStyle(retailerExperience.theme)}
+    >
       <header className="masthead">
-        <p className="eyebrow">Blackhawk Networks demo</p>
+        <p className="eyebrow">
+          {config?.retailer.organization_name ?? "Blackhawk Networks"} demo
+        </p>
         <div className="title-row">
           <div>
-            <h1>GiftFind</h1>
-            <p className="subtitle">RedisVL Relevance Lab</p>
+            <h1>{config?.retailer.experience_name ?? "GiftFind"}</h1>
+            <p className="subtitle">
+              {config?.retailer.experience_subtitle ?? "RedisVL Relevance Lab"}
+            </p>
           </div>
-          <p
-            className={
-              isReady ? "runtime-state healthy" : "runtime-state unavailable"
-            }
-            aria-live="polite"
-          >
-            {isReady ? "Redis connected" : "Checking runtime"}
-          </p>
+          <div className="masthead-tools">
+            <p
+              className={
+                isReady ? "runtime-state healthy" : "runtime-state unavailable"
+              }
+              aria-live="polite"
+            >
+              {isReady ? "Redis connected" : "Checking runtime"}
+            </p>
+            <a
+              aria-label="Open internal demo configuration"
+              className="configuration-link"
+              href="/?view=configuration"
+              title="Internal demo configuration"
+            >
+              <span aria-hidden="true">⚙</span>
+            </a>
+          </div>
         </div>
       </header>
       <section className="search-workspace" aria-labelledby="search-heading">
@@ -1042,7 +985,7 @@ export function SearchLabPage() {
           </div>
           <p>
             {config
-              ? `${config.catalog_count} catalog cards indexed`
+              ? `${config.catalog_count} ${config.retailer.catalog_label} indexed`
               : "Loading catalog"}
           </p>
         </div>
@@ -1056,7 +999,7 @@ export function SearchLabPage() {
                 onChange={(event) => choosePath(event.target.value)}
                 value={pathId}
               >
-                {DEMO_PATHS.map((path) => (
+                {demoPaths.map((path) => (
                   <option key={path.id} value={path.id}>
                     {path.label}
                   </option>
@@ -1097,17 +1040,23 @@ export function SearchLabPage() {
                   <input
                     aria-autocomplete="list"
                     aria-controls="redis-suggestions"
-                    aria-expanded={isSuggestionOpen && suggestions.length > 0}
+                    aria-expanded={
+                      typeaheadEnabled &&
+                      isSuggestionOpen &&
+                      suggestions.length > 0
+                    }
                     onChange={(event) => {
                       setQuery(event.target.value);
-                      setIsSuggestionOpen(true);
+                      setIsSuggestionOpen(typeaheadEnabled);
                       setActiveSuggestionIndex(-1);
                     }}
-                    onFocus={() => setIsSuggestionOpen(true)}
+                    onFocus={() => setIsSuggestionOpen(typeaheadEnabled)}
                     onKeyDown={handleSuggestionKeyDown}
                     value={query}
                   />
-                  {isSuggestionOpen && suggestions.length > 0 && (
+                  {typeaheadEnabled &&
+                    isSuggestionOpen &&
+                    suggestions.length > 0 && (
                     <div
                       className="autocomplete-menu"
                       id="redis-suggestions"
@@ -1159,7 +1108,13 @@ export function SearchLabPage() {
               )}
               {activeResponse && hasNextStep && (
                 <button
-                  onClick={() => setActiveStepIndex((index) => index + 1)}
+                  onClick={() => {
+                    const nextStep = activePath.steps[activeStepIndex + 1];
+                    if (nextStep.prefixMatching !== undefined) {
+                      setPrefixMatchingEnabled(nextStep.prefixMatching);
+                    }
+                    setActiveStepIndex((index) => index + 1);
+                  }}
                   type="button"
                 >
                   Continue: {activePath.steps[activeStepIndex + 1].title}
@@ -1201,6 +1156,35 @@ export function SearchLabPage() {
             <button onClick={restartPath} type="button">
               Reset this path
             </button>
+            <section
+              className="search-feature-controls"
+              aria-labelledby="feature-controls-heading"
+            >
+              <p className="label">Demo controls</p>
+              <h3 id="feature-controls-heading">Search features</h3>
+              <label className="feature-toggle">
+                <input
+                  checked={prefixMatchingEnabled}
+                  onChange={(event) =>
+                    setPrefixMatchingEnabled(event.target.checked)
+                  }
+                  type="checkbox"
+                />
+                <span>Brand prefix search</span>
+                <strong>{prefixMatchingEnabled ? "On" : "Off"}</strong>
+              </label>
+              <label className="feature-toggle">
+                <input
+                  checked={typeaheadEnabled}
+                  onChange={(event) =>
+                    setTypeaheadEnabled(event.target.checked)
+                  }
+                  type="checkbox"
+                />
+                <span>Typeahead suggestions</span>
+                <strong>{typeaheadEnabled ? "On" : "Off"}</strong>
+              </label>
+            </section>
           </aside>
         </div>
         <details className="technical-details">

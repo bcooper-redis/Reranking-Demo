@@ -6,15 +6,19 @@ from redis.asyncio import Redis
 from redisvl.utils.vectorize import HFTextVectorizer
 
 from app.config import Settings
+from app.retailers import RetailerDefinition
 from app.retrieval.catalog import normalize_text_query
 
 
 class EmbeddingService:
     """RedisVL local embeddings with a Redis-backed normalized-query cache."""
 
-    def __init__(self, settings: Settings, redis_client: Redis) -> None:
+    def __init__(
+        self, settings: Settings, redis_client: Redis, retailer: RetailerDefinition
+    ) -> None:
         self._settings = settings
         self._redis = redis_client
+        self._retailer = retailer
         self._vectorizer: HFTextVectorizer | None = None
 
     def _get_vectorizer(self) -> HFTextVectorizer:
@@ -64,4 +68,4 @@ class EmbeddingService:
         digest = hashlib.sha256(
             f"{self._settings.embedding_model}:{normalized_query}".encode()
         ).hexdigest()
-        return f"demo:cache:embedding:{digest}"
+        return self._retailer.redis.key("cache", "embedding", digest)

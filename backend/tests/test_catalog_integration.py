@@ -21,6 +21,12 @@ async def test_seeded_catalog_searches_and_respects_tenant_filter() -> None:
         best_buy = await service.hybrid_search(SearchRequest(query="Best Buy", debug=True))
         assert best_buy.results[0].brand_name == "Best Buy"
 
+        literal_star = await service.baseline_search(
+            SearchRequest(query="Star", prefix_matching=False, debug=True)
+        )
+        assert literal_star.results[0].brand_name == "AMC Theatres eGift"
+        assert literal_star.results[0].score_breakdown.prefix_match is False
+
         partial_brand = await service.hybrid_search(SearchRequest(query="Star", debug=True))
         assert partial_brand.results[0].brand_name == "Starbucks eGift"
         assert partial_brand.results[0].score_breakdown.prefix_match is True
@@ -56,7 +62,7 @@ async def test_seeded_catalog_searches_and_respects_tenant_filter() -> None:
             "Exact brand and alias guardrail",
         ]
         assert all(
-            query.statement.startswith("FT.SEARCH demo:giftcards ")
+            query.statement.startswith("FT.SEARCH demo:bhn:giftcards ")
             for query in discovery.redis_search_queries
         )
         assert discovery.redis_search_queries[1].parameters == [

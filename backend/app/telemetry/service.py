@@ -13,6 +13,7 @@ from app.models.search import (
     SearchResponse,
     TelemetrySnapshot,
 )
+from app.retailers import RedisNamespace
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +21,9 @@ logger = logging.getLogger(__name__)
 class TelemetryService:
     """Captures synthetic demo events and maintains in-process presentation metrics."""
 
-    def __init__(self, redis_client: Redis) -> None:
+    def __init__(self, redis_client: Redis, namespace: RedisNamespace | None = None) -> None:
         self._redis = redis_client
+        self._namespace = namespace
         self._request_count = 0
         self._error_count = 0
         self._fallback_count = 0
@@ -56,7 +58,7 @@ class TelemetryService:
             "intent": intent,
             "result_ids": [result.id for result in sample.results],
         }
-        await self._redis.set(f"demo:search:event:{event['id']}", json.dumps(event))
+        await self._redis.set(self._event_key(event["id"]), json.dumps(event))
         logger.info(json.dumps({"event": "search_impression", **event}))
 
     async def record_click(self, payload: ClickEventRequest) -> str:
@@ -67,7 +69,7 @@ class TelemetryService:
             "created_at": datetime.now(UTC).isoformat(),
             **payload.model_dump(),
         }
-        await self._redis.set(f"demo:search:event:{event_id}", json.dumps(event))
+        await self._redis.set(self._event_key(event_id), json.dumps(event))
         self._click_count += 1
         logger.info(json.dumps({"event": "result_click", **event}))
         return event_id
@@ -82,6 +84,11 @@ class TelemetryService:
             latency_p95_ms=round(_percentile(self._latencies_ms, 0.95), 2),
             click_count=self._click_count,
         )
+
+    def _event_key(self, event_id: str) -> str:
+        if self._namespace is None:
+            return f"demo:search:event:{event_id}"
+        return self._namespace.key("search", "event", event_id)
 
 
 def _percentile(values: deque[float], percentile: float) -> float:

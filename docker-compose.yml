@@ -17,7 +17,8 @@ services:
       context: ./backend
     environment:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-    command: ["python", "-m", "app.seed", "--reset", "--count", "360"]
+      RETAILER_ID: ${RETAILER_ID:-bhn}
+    command: ["python", "-m", "app.seed", "--reset", "--migrate-legacy", "--count", "360"]
     volumes:
       - model-cache:/root/.cache/huggingface
     depends_on:
@@ -29,6 +30,7 @@ services:
       context: ./backend
     environment:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      RETAILER_ID: ${RETAILER_ID:-bhn}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:5173}
       ROUTER_TIMEOUT_MS: ${ROUTER_TIMEOUT_MS:-30000}
       RERANK_TIMEOUT_MS: ${RERANK_TIMEOUT_MS:-3000}

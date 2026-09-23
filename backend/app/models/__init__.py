@@ -1,4 +1,9 @@
 from app.models.health import LivenessResponse, ReadinessResponse
+from app.models.onboarding import (
+    RetailerDeleteResponse,
+    RetailerImportRequest,
+    RetailerImportResponse,
+)
 from app.models.search import (
     AutocompleteResponse,
     ClickEventRequest,
@@ -12,6 +17,7 @@ from app.models.search import (
     PromotionOption,
     PublicConfigResponse,
     RerankerOption,
+    RetailerPublicConfig,
     SearchRequest,
     SearchResponse,
     SearchSuggestion,
@@ -32,6 +38,10 @@ __all__ = [
     "PromotionOption",
     "PublicConfigResponse",
     "RerankerOption",
+    "RetailerDeleteResponse",
+    "RetailerImportRequest",
+    "RetailerImportResponse",
+    "RetailerPublicConfig",
     "SearchSuggestion",
     "ReadinessResponse",
     "SearchRequest",

@@ -1,0 +1,52 @@
+{
+  "organization_name": "My New Company",
+  "experience_name": "My New Company Product Discovery",
+  "catalog_label": "products",
+  "theme": {
+    "accent": "#1261A0",
+    "accent_strong": "#0B3E68",
+    "accent_soft": "#E8F2FA",
+    "canvas": "#F5F8FB"
+  },
+  "demo_paths": {
+    "customer_query": "organized travel gear for a frequent commuter",
+    "exact_product_query": "Northstar Everyday Backpack",
+    "preference_query": "a useful gift for a traveler",
+    "preference_profile_name": "Travel Enthusiast",
+    "preference_category": "travel",
+    "prefix_query": "north",
+    "prefix_expected_product": "Northstar Everyday Backpack"
+  },
+  "products": [
+    {
+      "brand_name": "Northstar Everyday Backpack",
+      "description": "A synthetic everyday backpack for commuting, travel, and organized workdays.",
+      "aliases": ["work backpack", "commuter bag"],
+      "categories": ["bags", "travel"],
+      "recipient_tags": ["commuter", "traveler"],
+      "delivery_types": ["shipping", "pickup"],
+      "min_price": 45,
+      "max_price": 95
+    },
+    {
+      "brand_name": "North Star Travel Map",
+      "description": "A synthetic travel map for planning a calm and productive road trip.",
+      "aliases": ["north star map", "road trip map"],
+      "categories": ["office", "organization"],
+      "recipient_tags": ["professional", "student"],
+      "delivery_types": ["shipping"],
+      "min_price": 25,
+      "max_price": 55
+    },
+    {
+      "brand_name": "Northstar Travel Tumbler",
+      "description": "A synthetic insulated tumbler for commuting, road trips, and daily hydration.",
+      "aliases": ["insulated tumbler", "travel mug"],
+      "categories": ["drinkware", "travel"],
+      "recipient_tags": ["commuter", "traveler"],
+      "delivery_types": ["shipping", "pickup"],
+      "min_price": 20,
+      "max_price": 40
+    }
+  ]
+}

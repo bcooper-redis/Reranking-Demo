@@ -195,12 +195,15 @@ FIXTURES = [
         "recipient_tags": ["friend", "teen", "graduate"],
     },
     {
-        "id": "gc_pga_tour",
-        "brand_name": "PGA TOUR Superstore",
-        "aliases": ["pga tour superstore", "golf gift", "tennis and pickleball"],
-        "description": "Golf, tennis, and pickleball equipment, apparel, and accessories.",
-        "categories": ["entertainment", "fashion"],
-        "recipient_tags": ["sports fan", "parent", "graduate"],
+        "id": "gc_amc",
+        "brand_name": "AMC Theatres eGift",
+        "aliases": ["amc theatres", "movie star", "movie tickets"],
+        "description": "Movie tickets, theatre concessions, and an entertaining night out for film fans.",
+        "categories": ["entertainment"],
+        "recipient_tags": ["movie fan", "teen", "friend"],
+        "min_denomination": 15,
+        "max_denomination": 100,
+        "delivery_types": ["egift", "physical"],
     },
     {
         "id": "gc_bloomin",
@@ -430,13 +433,15 @@ def _record(
     min_denomination: int | None = None,
     max_denomination: int | None = None,
     delivery_types: list[str] | None = None,
+    tenant_ids: list[str] | None = None,
 ) -> dict[str, str]:
     delivery_types = delivery_types or (["egift"] if ordinal % 3 == 0 else ["egift", "physical"])
-    tenant_ids = ["general"]
-    if ordinal % 5 != 0:
-        tenant_ids.append("bank_rewards")
-    if ordinal % 4 != 0:
-        tenant_ids.append("employee_recognition")
+    if tenant_ids is None:
+        tenant_ids = ["general"]
+        if ordinal % 5 != 0:
+            tenant_ids.append("bank_rewards")
+        if ordinal % 4 != 0:
+            tenant_ids.append("employee_recognition")
     min_denomination = min_denomination or (10 if ordinal % 4 else 25)
     max_denomination = max_denomination or [50, 75, 100, 200, 500][ordinal % 5]
     embedding_text = ". ".join(
