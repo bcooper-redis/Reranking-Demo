@@ -162,6 +162,11 @@ filters apply before ranking. Hybrid retrieval uses text and vector queries, the
 application-side reciprocal rank fusion. Eligible exact-brand matches stay
 protected after reranking and policy scoring.
 
+The [Redis Search Flows PDF](docs/redis-search-flows.pdf) provides five
+customer-neutral engineering diagrams covering retrieval, prefix search and
+typeahead, exact-match protection, routing, and personalization. Each flow shows
+what runs in Redis, what runs in the application, and why.
+
 See [ADR 0001](docs/decisions/0001-redis-hash-search-index.md) for the original
 storage decision. The [Requirements folder](Requirements/README.md) records the
 build plan; some planned features differ from the current implementation. Use
