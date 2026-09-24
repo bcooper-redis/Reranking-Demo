@@ -39,7 +39,7 @@ Select **Customer search**.
 
 ## Redis typeahead
 
-Use the **Demo controls** in the presenter panel to enable **Typeahead suggestions**. Type `Star` in the customer request field before running a search. Redis Search returns `Starbucks eGift` from the tenant-filtered brand and alias prefix index; selecting it fills the request. This is a separate low-latency Redis lookup, before lexical, vector, or re-ranking work begins.
+Use the **Demo controls** in the presenter panel to enable **Typeahead suggestions**. Type `Star` in the customer request field. Redis Search returns `Starbucks eGift` from the tenant-filtered brand and alias prefix index. Click a suggestion, or highlight it with the arrow keys and press Enter, to fill the request and immediately run the current search step. The active search mode, profile, reranker, and prefix setting stay unchanged. The suggestion lookup is a separate low-latency Redis call; selecting a suggestion then starts the normal search pipeline.
 
 ## Short-prefix discovery
 

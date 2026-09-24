@@ -1,166 +1,179 @@
 # GiftFind RedisVL Relevance Lab
 
-GiftFind is a local web demo for Blackhawk Network conversations. It shows how Redis and RedisVL can serve gift-card discovery, hybrid lexical plus semantic retrieval, neural re-ranking, intent routing, bounded personalization, tenant merchandising, and evaluation from one real-time relevance platform.
+A local retail search demo for Redis Solutions Architects. The built-in Blackhawk
+Network (BHN) experience uses gift cards to show text search, hybrid search,
+reranking, semantic routing, and bounded personalization.
 
-The catalog pairs a curated public GiftCards.com assortment snapshot with synthetic relevance-lab variants; personas, tenants, promotions, and events are synthetic. The snapshot is intentionally static, so availability, denominations, and fulfillment in this demo are not a live commerce feed.
+**Start with the [SA Install and Run Guide](docs/install-and-run.md).** It covers
+setup, model warmup, daily use, retailer imports, and troubleshooting. For the
+customer story, use the [Demo Walkthrough](docs/demo-walkthrough.md).
 
-## Quick Start
+The catalog includes a static public GiftCards.com assortment snapshot and
+synthetic examples. It is not a live commerce feed. Prices, availability, profiles,
+and service actions are demo data.
+
+## First-Time Setup
+
+Install Git and a Docker runtime with Docker Compose. You do not need a local
+Python or Node.js install, a GPU, or a paid AI API key.
 
 ```bash
+git clone https://github.com/bcooper-redis/BHN-Reranking-Demo.git redisvl-retail-demo
+cd redisvl-retail-demo
 cp .env.example .env
-docker compose up --build
+docker compose up -d --build
 ```
 
-Open:
+This startup path runs the seed service, which resets and loads the built-in BHN
+catalog. First-time downloads may take several minutes or longer. For later runs,
+use the [startup steps that preserve data](docs/install-and-run.md#start-again-without-resetting-data).
 
-- Frontend: http://localhost:5173
-- API docs: http://localhost:8000/docs
-- Readiness: http://localhost:8000/health/ready
+If another Redis instance uses port `6379`, change `REDIS_PORT` in `.env` to `6380`.
+Keep `REDIS_URL=redis://redis:6379` for communication inside Docker.
 
-The `seed` service prepares Redis before the API starts. During Milestone 0 it verifies Redis connectivity and initializes the demo runtime namespace; catalog indexing and local-model downloads arrive in Milestone 1.
+Open the [demo](http://localhost:5173/),
+[retailer configuration](http://localhost:5173/?view=configuration), or
+[API reference](http://localhost:8000/docs).
 
-## Implementation Status
-
-- [x] Milestone 0: local runtime, health endpoints, Docker images, quality commands, and CI.
-- [x] Milestone 1: catalog generation, RedisVL index, seed data, and baseline search.
-- [x] Milestone 2: hybrid retrieval and comparison.
-- [x] Milestone 3: RedisVL re-ranking.
-- [x] Milestone 4: semantic routing.
-- [x] Milestone 5: personalization and merchandising.
-- [x] Milestone 6: evaluation, telemetry, and presenter polish.
-- [x] Milestone 7: bounded concurrent load testing and steady-state latency reporting.
-- [x] Retailer configuration foundation: BHN branding, scenes, seed sources, routes,
-  judgments, and Redis names are now defined in one demo-only retailer contract.
-- [x] Retailer Redis isolation: BHN data, Redis Search, SemanticRouter, caches, events,
-  and evaluations use the `demo:bhn:*` namespace.
-- [x] Retailer skinning foundation: the API publishes the registered retailer list, while
-  the React experience config owns the retailer palette and guided-demo copy. The current
-  configuration route prepares the retailer context outside the customer-facing demo.
-- [x] Retailer Milestone 4: the internal Demo Foundry accepts a ChatGPT-generated JSON or text
-  catalog with a compact brand palette, creates an isolated RedisVL index and router at runtime,
-  derives five catalog-aware e-commerce walkthrough paths, and restores saved custom retailer
-  configurations after API restart.
-
-Milestone 2 generates local Hugging Face embeddings with RedisVL during seed, caches normalized query embeddings in Redis, runs tenant-filtered lexical and vector retrieval, and fuses the ranked candidates with Reciprocal Rank Fusion. Exact active brand and alias matches are guarded at rank one after fusion.
-
-Milestone 3 re-scores the top hybrid candidates with RedisVL's local Hugging Face cross-encoder. Re-ranker scores are normalized, exact matches remain protected, and timeout or provider failures return the hybrid order with explicit fallback metadata. Comparison mode shows baseline, hybrid, and re-ranked columns, including stage and rolling warm-p95 timing diagnostics.
-
-The application default remains a conservative 250 ms re-ranker timeout. The CPU-only Docker demo uses a 3-second budget unless `RERANK_TIMEOUT_MS` is set, so the warmed local cross-encoder can be shown during a presentation.
-
-Milestone 4 routes each query through RedisVL `SemanticRouter`, using version-controlled references stored under `demo:bhn:routes`. Confident balance, activation, order-status, and support intents return a simulated action card. Low-confidence or unavailable-router decisions fall back safely to product search, with the selected intent, distance, threshold, source, and timing shown in the demo panel.
-
-Milestone 5 loads synthetic personas, tenant policy caps, and tenant-eligible promotions from Redis on each request. It applies bounded boosts only after retrieval, exposes every contribution on result cards, and runs exact-brand protection after policy scoring. Promotions only affect candidates already returned by relevance retrieval and only when their category is eligible.
-
-Milestone 6 adds a version-controlled golden-query scorecard for baseline, hybrid, and re-ranked paths. Each run reports Hit@1, MRR, NDCG@10, Recall@25, route accuracy, and p50/p95 latency, then saves its index and model configuration under `demo:bhn:evaluation:*`. The UI includes presenter scenes, compact synthetic event telemetry, and result-selection capture under `demo:bhn:search:event:*`.
-
-Milestone 7 adds a bounded load test alongside the scorecard. After one normal re-ranked request warms the selected local cross-encoder, the UI runs four product judgments through baseline, hybrid, and re-ranked retrieval three times each. At concurrency `2`, each mode records 12 requests while allowing two requests to overlap; the resulting p50 and p95 distinguish steady-state performance from initial model loading. The report also separates safe routing fallbacks from failed requests. Use concurrency `4` only as a local CPU-pressure observation, not as a production capacity benchmark. Every run retains the selected re-ranker configuration and is saved under `demo:bhn:evaluation-load:*`.
-
-The home-screen demo controls leave prefix search and Redis-backed typeahead off by default. The **Short-prefix discovery** path makes the contrast explicit: literal `Star` first finds `AMC Theatres eGift` through its `movie star` catalog alias, then brand prefix search adds a tenant-filtered prefix lookup that promotes `Starbucks eGift`. Enable **Typeahead suggestions** to show the separate low-latency prefix lookup while typing at least three characters. Selecting a suggestion fills the request; baseline, hybrid, and re-ranked retrieval remain separate stages.
-
-## Retailer Skins
-
-The frontend resolves the active retailer from this browser's internal configuration route:
-`http://localhost:5173/?view=configuration`. That route stores the choice locally and adds an
-`X-Demo-Retailer` header to API calls. The customer-facing demo has no retailer selector. The
-API resolves that header to a dedicated catalog, router, telemetry, and evaluation service;
-Redis data remains isolated: BHN uses `demo:bhn:*`, and every Foundry-created retailer receives
-its own `demo:<retailer-id>:*` namespace. The frontend experience in `frontend/src/retailers/`
-supplies the BHN palette and a generated experience for each Foundry catalog without copying the
-application. New Foundry payloads include an explicit `demo_paths` object for the customer-search
-prompt, exact-product prompt, bounded preference profile, and a short-prefix discovery scenario;
-the importer validates that the configured preference category exists in the catalog and that the
-prefix scenario has both literal and intended-prefix evidence. Older payloads use catalog-derived
-values as a compatibility fallback. Every generated walkthrough also includes an e-commerce
-order-support route for SemanticRouter.
-
-Use [the Demo Foundry example](docs/demo-foundry-example.json) as a valid upload shape. The
-configuration screen also includes a copyable ChatGPT prompt that requests exactly 360 original
-synthetic products and four website-inspired palette colors. The compact example is a schema
-reference; a generated catalog must contain all 360 products before it can be imported.
-
-## Local Commands
+Check the services and catalog:
 
 ```bash
-make up              # build and start Redis, seed, API, and frontend
-make down            # stop containers
-make seed            # reset and reseed Redis from the backend container
-make test            # run backend and frontend tests
-make backend-test    # run pytest
-make backend-integration-test # query the seeded Redis Query Engine instance
-make frontend-test   # run vitest
-make eval            # run golden-query evaluation through the API
+docker compose ps -a
+curl --fail --show-error http://localhost:8000/health/ready
+curl --fail --show-error -H 'X-Demo-Retailer: bhn' \
+  http://localhost:8000/api/v1/config/public
 ```
 
-When another Redis instance already uses port `6379`, start the demo's isolated Docker Redis on a different host port:
+The seed service should finish with exit code `0`. The API should report Redis as
+connected, and the BHN config should show `catalog_count: 360`. The ready endpoint
+checks Redis connectivity only. It does not check catalog contents or model
+warmup. Follow the guide's search checks before a meeting.
+
+**Local demo only:** the app has no login or API authentication. Compose publishes
+ports on all host interfaces by default. Use a trusted environment and follow your
+team's firewall rules. Do not expose the app or Redis to the public internet.
+
+## Demo Paths
+
+| Path | What it shows |
+| --- | --- |
+| Customer search | Run text search, add hybrid retrieval, then rerank candidates |
+| Short-prefix discovery | Search `Star` as text, then enable prefix matching to find Starbucks |
+| Exact-brand confidence | Keep an eligible exact-brand match ahead of other candidates |
+| Service routing | Return a simulated service action before product retrieval |
+| Bounded personalization | Apply a small profile boost after relevance scoring |
+
+Each search button makes a new request. **Continue** changes the step without
+running it. A reranked request runs hybrid retrieval again before the cross-encoder.
+The UI can switch between RedisVL's local MiniLM L6 and TinyBERT L2 rerankers.
+Warm each model before comparing it. No Cohere or Voyage adapter is implemented.
+
+Prefix search and typeahead start off. Typeahead makes a separate Redis prefix
+lookup while you type. Selecting a suggestion fills the field and immediately
+runs the current search step with the active demo settings.
+
+Open **Execution and timing** or **Redis Search queries** to show the actual work.
+The [walkthrough](docs/demo-walkthrough.md) explains the full presentation flow.
+
+## Custom Retailer Demos
+
+Use the gear icon to open the configuration page. The Demo Foundry provides a
+copyable prompt for a downloadable JSON catalog. Generate the file in ChatGPT,
+download it, upload it, name the demo, and click **Generate retailer demo**.
+Wait for **Generation complete** before opening it.
+
+The current prompt requests exactly 360 synthetic products, website-inspired
+colors, and catalog-based search prompts. Discovery prompts ask for one item in
+6-10 words. The generated paths include a short-prefix example and a service route.
+The [example JSON](docs/demo-foundry-example.json) shows the format, but is too
+small to upload as a complete catalog.
+
+Each custom retailer uses its own `demo:<retailer-id>:*` keys and indexes. Saved
+configurations reload from Redis when the API starts. The browser remembers its
+selection and sends an `X-Demo-Retailer` header with requests.
+
+Importing the same organization replaces its demo. Keep original JSON files as
+backups. The configuration page can delete custom demos; BHN is protected.
+See the [full import and delete steps](docs/install-and-run.md#create-or-delete-a-retailer-demo).
+
+Product images are optional. Missing or failed images use branded placeholders.
+See [Product Artwork and Sources](docs/product-images.md).
+
+## Scorecard and Load Testing
+
+The golden query scorecard compares search results against stored demo judgments.
+It reports ranking quality, route accuracy, and latency. Higher ranking scores do
+not guarantee better results for every customer query.
+
+Milestone 7 adds a bounded load test. Warm the selected reranker, open **Golden
+query scorecard and load testing**, choose concurrency `2`, and run the test. BHN
+uses four product queries, three rounds, and three modes: 12 requests per mode.
+The report includes p50, p95, fallbacks, and errors. It saves the chosen model and
+settings with the result.
+
+These small laptop runs are demo observations, not production capacity tests.
+Compare warmed runs with the same settings. Concurrency `4` adds more local CPU
+pressure. Browser round-trip time includes more work than Redis retrieval time.
+
+## Stop and Restart
 
 ```bash
-REDIS_PORT=6380 make up
+docker compose stop
 ```
 
-## Demo Flow
-
-1. Select `Comparison` mode and search `coffee gift for my child's teacher`.
-2. Show baseline lexical, Redis hybrid, and Redis hybrid plus RedisVL re-ranker columns.
-3. Search `Best Buy` and expand diagnostics to show exact-match protection.
-4. Search `check my balance` to show RedisVL semantic routing to an action card.
-5. Change persona from `Anonymous` to `Tech Buyer` for an ambiguous query.
-6. Switch tenants to show eligibility and promotion policy changes.
-7. Open the evaluation panel and run the golden-query scorecard.
-8. Run one re-ranked product search to warm the selected model, then choose concurrency `2` and run the load test. Compare p50/p95 across baseline, hybrid, and re-ranked results; repeat after warmup when the first run included model initialization.
-
-The presenter control includes the same four demo scenes in the UI: relevance comparison, exact-brand trust, action routing, and controlled personalization. Presenter mode hides raw Redis command traces while retaining the ranking explanation, policy evidence, and scorecard.
-
-## Architecture
-
-- `frontend`: React, TypeScript, Vite, lucide-react.
-- `backend`: FastAPI, Pydantic, redis-py, RedisVL.
-- `redis`: Redis 8.4 local instance.
-- `seed`: idempotent backend command that creates indexes and loads data.
-
-Gift-card products use Redis Hashes with the namespace `demo:bhn:giftcard:{id}`. The Redis Search physical index is `demo:bhn:giftcards:v1`; the API queries the alias `demo:bhn:giftcards`. BHN's old shared `demo:*` state is removed during the demo seed migration, ensuring future retailers receive independent keys and indexes. The configuration lives in `backend/app/retailers/bhn.py`. Hash storage is documented in [ADR 0001](docs/decisions/0001-redis-hash-search-index.md).
-
-## API Highlights
-
-- `POST /api/v1/search`: baseline, hybrid, reranked, or comparison search.
-- `GET /api/v1/search/suggestions`: tenant-filtered Redis Search typeahead for partial brands and aliases.
-- `GET /api/v1/config/public`: personas, tenants, search modes, and demo disclaimers.
-- `POST /api/v1/events/click`: records synthetic result clicks.
-- `POST /api/v1/evaluations/run`: runs the golden-query evaluator.
-- `GET /api/v1/evaluations/{id}`: retrieves a saved scorecard.
-- `POST /api/v1/evaluations/load`: runs the bounded concurrent load test.
-- `GET /api/v1/telemetry`: returns compact request, route, fallback, and click metrics.
-- `GET /health/ready`: checks Redis, index, routing, and model readiness.
-
-## Configuration
-
-The shared Retail Showcase interface applies to every retailer, with a compact
-demo control strip, product grid/list views, before/after ranking comparison, and
-expandable execution, Redis query, scorecard, and load-testing panels. The footer
-uses a red **Made with RedisVL** text credit, not the legacy stacked-block logo.
-
-Catalog uploads support an optional `image_url` on each product. Missing or failed
-images use branded placeholders; existing catalogs need no migration or reseeding.
-See [Product artwork and sources](docs/product-images.md) for provenance and hosting details.
-
-See `.env.example` for all supported variables. Defaults run locally with no paid API keys.
-
-`RETAILER_ID` defaults to `bhn`, the sole built-in retailer. Demo Foundry imports are restored
-from Redis at API startup. A custom demo can be deleted from the internal configuration page,
-which removes its isolated catalog, Redis Search index, routing data, telemetry, evaluations, and
-saved configuration. The BHN demo is protected.
-
-Optional Cohere and VoyageAI re-ranker settings are present but disabled unless credentials are supplied. The default provider attempts RedisVL `HFCrossEncoderReranker`; if local model loading fails, the API falls back to hybrid ordering and reports that fallback in diagnostics.
-
-## Troubleshooting
-
-If Redis is not ready:
+To start again without running the seed service:
 
 ```bash
-docker compose logs redis
-docker compose logs seed
-docker compose logs api
+docker compose up -d --no-deps redis
+docker compose exec redis redis-cli ping
 ```
 
-If model downloads are slow, keep the containers running between demos so warmed models and Docker layers are reused.
+Wait for `PONG`, then run:
 
-If you are demonstrating against Redis Cloud or Redis Enterprise, set `REDIS_URL` in `.env`; do not commit secrets or full credential URLs.
+```bash
+docker compose up -d --no-deps api frontend
+```
+
+To restart only the application:
+
+```bash
+docker compose restart api frontend
+```
+
+This keeps Redis data. Warm the models again after an API restart. Use the guide
+for [updates](docs/install-and-run.md#get-code-updates),
+[settings](docs/install-and-run.md#settings), and
+[data resets](docs/install-and-run.md#reset-data).
+
+## Architecture and Code
+
+| Component | Stack | Main code |
+| --- | --- | --- |
+| Web interface | React, TypeScript, Vite | `frontend/src/pages/` |
+| API and retrieval | FastAPI, redis-py, RedisVL | `backend/app/retrieval/catalog.py` |
+| Local rerankers | RedisVL `HFCrossEncoderReranker` | `backend/app/reranking/provider.py` |
+| Semantic routing | RedisVL `SemanticRouter` | `backend/app/routing/service.py` |
+| Retailer setup | Built-in registry and runtime imports | `backend/app/retailers/` |
+| Data and search | Redis 8.4, Hashes, Redis Search | `backend/app/redis/catalog_index.py` |
+
+BHN uses keys such as `demo:bhn:giftcard:{id}`, physical index
+`demo:bhn:giftcards:v1`, and search alias `demo:bhn:giftcards`. Tenant and active
+filters apply before ranking. Hybrid retrieval uses text and vector queries, then
+application-side reciprocal rank fusion. Eligible exact-brand matches stay
+protected after reranking and policy scoring.
+
+See [ADR 0001](docs/decisions/0001-redis-hash-search-index.md) for the original
+storage decision. The [Requirements folder](Requirements/README.md) records the
+build plan; some planned features differ from the current implementation. Use
+the code and install guide for current behavior.
+
+## Developer Checks
+
+The Docker images run the demo. They do not include the full test environment.
+For local development, use Python 3.12 or later with the backend's `dev` extras,
+and Node.js 22 with `npm ci` in `frontend`.
+
+The `Makefile` provides test and lint commands once those local tools are installed.
+`make backend-integration-test` needs a seeded Redis instance and defaults to host
+port `6380`; set `REDIS_URL` explicitly if yours differs. `make seed` resets BHN
+data, so do not use it as a health check.

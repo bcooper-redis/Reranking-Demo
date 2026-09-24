@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, KeyboardEvent } from "react";
 import {
   ArrowRight,
@@ -609,6 +609,7 @@ export function SearchLabPage() {
   const [search, setSearch] = useState<SearchResponse | null>(null);
   const [searchError, setSearchError] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const searchInFlight = useRef(false);
   const [resultLayout, setResultLayout] = useState<"grid" | "list">("grid");
   const [roundTripMs, setRoundTripMs] = useState<number | null>(null);
   const [evaluation, setEvaluation] = useState<EvaluationRun | null>(null);
@@ -706,9 +707,14 @@ export function SearchLabPage() {
     config?.rerankers.find((reranker) => reranker.id === rerankerId)
       ?.display_name ?? "selected reranker";
 
-  async function runStep(event: FormEvent<HTMLFormElement>) {
+  function runStep(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!query.trim()) return;
+    void executeSearch(query);
+  }
+
+  async function executeSearch(submittedQuery: string) {
+    if (!submittedQuery.trim() || !isReady || searchInFlight.current) return;
+    searchInFlight.current = true;
     setIsSearching(true);
     setSearchError(false);
     setRoundTripMs(null);
@@ -716,7 +722,7 @@ export function SearchLabPage() {
     const requestStartedAt = performance.now();
     try {
       const response = await searchCatalog(
-        query,
+        submittedQuery,
         tenantId,
         activeStep.profileId,
         activeStep.promotionId,
@@ -732,6 +738,7 @@ export function SearchLabPage() {
     } catch {
       setSearchError(true);
     } finally {
+      searchInFlight.current = false;
       setIsSearching(false);
     }
   }
@@ -795,10 +802,12 @@ export function SearchLabPage() {
   }
 
   function selectSuggestion(suggestion: SearchSuggestion) {
+    if (!isReady || searchInFlight.current) return;
     setQuery(suggestion.brand_name);
     setSuggestions([]);
     setIsSuggestionOpen(false);
     setActiveSuggestionIndex(-1);
+    void executeSearch(suggestion.brand_name);
   }
 
   function handleSuggestionKeyDown(event: KeyboardEvent<HTMLInputElement>) {
