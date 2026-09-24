@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.models.onboarding import RetailerImportRequest
+from app.models.onboarding import ImportedProduct, RetailerImportRequest
 from app.retailers.onboarding import build_retailer, retailer_id_for
 
 
@@ -20,6 +20,7 @@ def test_imported_retailer_builds_an_isolated_catalog_and_theme() -> None:
             "products": [
                 {
                     "brand_name": f"Example Product {number}",
+                    "image_url": "https://example.com/product.jpg" if number == 1 else None,
                     "description": "A synthetic product for the dynamic demo catalog.",
                     "categories": ["examples"],
                 }
@@ -57,7 +58,20 @@ def test_imported_retailer_builds_an_isolated_catalog_and_theme() -> None:
     assert retailer.deterministic_actions["where is my order"] == "order_status"
     records = retailer.generate_catalog(360)
     assert len(records) == 360
+    assert records[0]["image_url"] == "https://example.com/product.jpg"
+    assert records[1]["image_url"] == ""
     assert {record["tenant_ids"] for record in records} == {"general"}
+
+
+def test_product_images_are_optional_and_reject_non_http_urls() -> None:
+    product = {
+        "brand_name": "Trail Shoe",
+        "description": "A synthetic trail shoe.",
+        "categories": ["Footwear"],
+    }
+    assert ImportedProduct.model_validate(product).image_url is None
+    with pytest.raises(ValidationError):
+        ImportedProduct.model_validate({**product, "image_url": "javascript:alert(1)"})
 
 
 def test_imported_retailer_derives_prompts_from_catalog_signals() -> None:

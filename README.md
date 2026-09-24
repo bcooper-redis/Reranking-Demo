@@ -133,6 +133,15 @@ Gift-card products use Redis Hashes with the namespace `demo:bhn:giftcard:{id}`.
 
 ## Configuration
 
+The shared Retail Showcase interface applies to every retailer, with a compact
+demo control strip, product grid/list views, before/after ranking comparison, and
+expandable execution, Redis query, scorecard, and load-testing panels. The footer
+uses a red **Made with RedisVL** text credit, not the legacy stacked-block logo.
+
+Catalog uploads support an optional `image_url` on each product. Missing or failed
+images use branded placeholders; existing catalogs need no migration or reseeding.
+See [Product artwork and sources](docs/product-images.md) for provenance and hosting details.
+
 See `.env.example` for all supported variables. Defaults run locally with no paid API keys.
 
 `RETAILER_ID` defaults to `bhn`, the sole built-in retailer. Demo Foundry imports are restored

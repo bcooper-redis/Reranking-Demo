@@ -39,6 +39,7 @@ from app.routing import RoutingDecision, RoutingService
 RETURN_FIELDS = [
     "id",
     "brand_name",
+    "image_url",
     "description",
     "categories",
     "aliases",
@@ -760,6 +761,7 @@ class CatalogService:
         return ProductResult(
             id=self._document_id(document),
             brand_name=str(document.get("brand_name", "")),
+            image_url=str(document.get("image_url") or "") or None,
             description=str(document.get("description", "")),
             categories=split_tags(str(document.get("categories", ""))),
             delivery_types=split_tags(str(document.get("delivery_types", ""))),

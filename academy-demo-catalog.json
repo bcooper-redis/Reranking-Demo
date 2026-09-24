@@ -9,11 +9,13 @@
     "canvas": "#F7F9FA"
   },
   "demo_paths": {
-    "customer_query": "I need a tent, sleeping bags, and folding chairs for a weekend family camping trip.",
+    "customer_query": "First time camper and I need a tent",
     "exact_product_query": "Magellan Outdoors Demo Four Person Dome Tent",
     "preference_query": "I need a gift for someone who enjoys relaxing at camp, such as a padded chair or a camp pillow.",
     "preference_profile_name": "Camping Enthusiast",
-    "preference_category": "Camp Comfort"
+    "preference_category": "Camp Comfort",
+    "prefix_query": "black",
+    "prefix_expected_product": "Blackstone Demo Weekend Tabletop Griddle"
   },
   "products": [
     {
@@ -2543,7 +2545,7 @@
     },
     {
       "brand_name": "Under Armour Demo Baseball Turf Shoes",
-      "description": "Synthetic baseball turf shoes for grass field practices.",
+      "description": "Synthetic turf shoes for training on artificial fields.",
       "aliases": [
         "baseball turf shoes",
         "under armour baseball turf shoes",
@@ -2567,7 +2569,7 @@
     },
     {
       "brand_name": "Nike Demo Soccer Turf Shoes",
-      "description": "Synthetic soccer turf shoes for grass field practices.",
+      "description": "Synthetic turf shoes for training on artificial fields.",
       "aliases": [
         "soccer turf shoes",
         "nike soccer turf shoes",
@@ -4031,8 +4033,8 @@
         "shipping",
         "pickup"
       ],
-      "min_price": 55,
-      "max_price": 80
+      "min_price": 180,
+      "max_price": 250
     },
     {
       "brand_name": "Magellan Outdoors Demo Family Hard Cooler",
@@ -4078,8 +4080,8 @@
         "shipping",
         "pickup"
       ],
-      "min_price": 65,
-      "max_price": 95
+      "min_price": 300,
+      "max_price": 420
     },
     {
       "brand_name": "Magellan Outdoors Demo Backpack Soft Cooler",
@@ -4125,8 +4127,8 @@
         "shipping",
         "pickup"
       ],
-      "min_price": 55,
-      "max_price": 80
+      "min_price": 140,
+      "max_price": 200
     },
     {
       "brand_name": "Magellan Outdoors Demo Tall Drink Cooler",
@@ -4172,8 +4174,8 @@
         "shipping",
         "pickup"
       ],
-      "min_price": 65,
-      "max_price": 95
+      "min_price": 220,
+      "max_price": 300
     },
     {
       "brand_name": "Magellan Outdoors Demo Small Picnic Cooler",
@@ -4219,8 +4221,8 @@
         "shipping",
         "pickup"
       ],
-      "min_price": 55,
-      "max_price": 80
+      "min_price": 280,
+      "max_price": 380
     },
     {
       "brand_name": "Magellan Outdoors Demo Road Trip Cooler",
@@ -4477,12 +4479,12 @@
       "max_price": 35
     },
     {
-      "brand_name": "Blackstone Demo Long Grill Spatula",
-      "description": "Synthetic long grill spatula for outdoor meal preparation.",
+      "brand_name": "Blackstone Demo Weekend Tabletop Griddle",
+      "description": "Synthetic compact griddle for cooking breakfast and burgers at a campsite or tailgate.",
       "aliases": [
-        "long grill spatula",
-        "blackstone long grill spatula",
-        "outdoor cooking for backyard cooks"
+        "blackstone tabletop griddle",
+        "portable outdoor griddle",
+        "camp breakfast griddle"
       ],
       "categories": [
         "Home and Recreation",
@@ -4496,8 +4498,8 @@
         "shipping",
         "pickup"
       ],
-      "min_price": 20,
-      "max_price": 30
+      "min_price": 160,
+      "max_price": 240
     },
     {
       "brand_name": "Outdoor Gourmet Demo Grill Tongs",

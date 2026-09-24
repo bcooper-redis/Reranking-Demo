@@ -1,5 +1,19 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties, FormEvent, KeyboardEvent } from "react";
+import {
+  ArrowRight,
+  Check,
+  ChevronRight,
+  Grid2X2,
+  List,
+  LoaderCircle,
+  RotateCcw,
+  Search,
+  Settings2,
+  X,
+} from "lucide-react";
+import { ChangeSummary, RetailResults } from "../components/RetailResults";
+import { resultInsight } from "../components/resultInsight";
 
 import { getReadiness, type Readiness } from "../api/health";
 import {
@@ -53,140 +67,6 @@ function retailerThemeStyle(theme: RetailerTheme): CSSProperties {
     "--retailer-success-soft": theme.successSoft,
     "--retailer-subtle": theme.subtle,
   } as CSSProperties;
-}
-
-function ResultList({
-  response,
-  comparisonSource,
-  comparisonLabel,
-  compact = false,
-  visibleLimit,
-  onResultClick,
-}: {
-  response: SearchResponse;
-  comparisonSource?: SearchResponse;
-  comparisonLabel?: string;
-  compact?: boolean;
-  visibleLimit?: number;
-  onResultClick?: (response: SearchResponse, resultId: string) => void;
-}) {
-  const comparisonRanks = new Map(
-    comparisonSource?.results.map((result, index) => [result.id, index + 1]),
-  );
-  const displayedResults = compact
-    ? response.results.slice(0, visibleLimit ?? 5)
-    : response.results;
-  return (
-    <section className="results" aria-label={`${response.mode} search results`}>
-      <div className="results-heading">
-        <p>
-          {compact ? `Top ${displayedResults.length} of ` : ""}
-          {response.results.length} results
-        </p>
-        <p>
-          {response.timings_ms.retrieval?.toFixed(2) ?? "-"} ms Redis retrieval
-        </p>
-      </div>
-      <ol className={compact ? "compact-results" : undefined}>
-        {displayedResults.map((result, index) => {
-          const previousRank = comparisonRanks.get(result.id);
-          return (
-            <li key={result.id}>
-              <div>
-                <div className="brand-line">
-                  <span className="rank">{index + 1}</span>
-                  <h3>{result.brand_name}</h3>
-                  {result.score_breakdown?.exact_match && (
-                    <span className="guardrail">Exact match</span>
-                  )}
-                  {result.score_breakdown?.prefix_match &&
-                    !result.score_breakdown.exact_match && (
-                      <span className="guardrail">Brand prefix</span>
-                    )}
-                </div>
-                <p className="result-description">{result.description}</p>
-                <div className="tags">
-                  {result.categories.map((category) => (
-                    <span key={category}>{category}</span>
-                  ))}
-                  {result.promoted && (
-                    <span className="promotion-badge">Promoted</span>
-                  )}
-                </div>
-                {previousRank && previousRank !== index + 1 && (
-                  <p className="rank-change">
-                    Moved from {comparisonLabel ?? "the prior stage"} #
-                    {previousRank}
-                  </p>
-                )}
-              </div>
-              <div className="result-meta">
-                <span>
-                  ${result.min_denomination}-${result.max_denomination}
-                </span>
-                <span>{result.delivery_types.join(", ")}</span>
-                {onResultClick && !compact && (
-                  <button
-                    className="result-select"
-                    onClick={() => onResultClick(response, result.id)}
-                    type="button"
-                  >
-                    Select
-                  </button>
-                )}
-              </div>
-            </li>
-          );
-        })}
-      </ol>
-      {response.fallbacks.length > 0 && (
-        <p className="fallback">Fallback: {response.fallbacks.join(", ")}</p>
-      )}
-    </section>
-  );
-}
-
-function StepInsight({
-  response,
-  previousResponse,
-  detail,
-}: {
-  response: SearchResponse;
-  previousResponse: SearchResponse | null;
-  detail: string;
-}) {
-  if (response.action) {
-    return (
-      <section className="step-insight" aria-live="polite">
-        <p className="label">What changed</p>
-        <h3>Product retrieval was skipped</h3>
-        <p>{detail}</p>
-      </section>
-    );
-  }
-
-  const winner = response.results[0];
-  const priorWinner = previousResponse?.results[0];
-  const matchingFields = winner?.score_breakdown?.matching_fields?.join(", ");
-  const headline =
-    priorWinner && winner && priorWinner.id !== winner.id
-      ? `#1 changed from ${priorWinner.brand_name} to ${winner.brand_name}`
-      : winner
-        ? `${winner.brand_name} holds the top position`
-        : "The current stage returned no product results";
-
-  return (
-    <section className="step-insight" aria-live="polite">
-      <p className="label">What changed</p>
-      <h3>{headline}</h3>
-      <p>{detail}</p>
-      {matchingFields && (
-        <p className="signal-line">
-          <strong>Visible evidence:</strong> {matchingFields}
-        </p>
-      )}
-    </section>
-  );
 }
 
 type FlowStep = {
@@ -729,6 +609,7 @@ export function SearchLabPage() {
   const [search, setSearch] = useState<SearchResponse | null>(null);
   const [searchError, setSearchError] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [resultLayout, setResultLayout] = useState<"grid" | "list">("grid");
   const [roundTripMs, setRoundTripMs] = useState<number | null>(null);
   const [evaluation, setEvaluation] = useState<EvaluationRun | null>(null);
   const [isEvaluating, setIsEvaluating] = useState(false);
@@ -809,7 +690,10 @@ export function SearchLabPage() {
   const activeStep = activePath.steps[activeStepIndex];
   const activeResponse = journey[activeStepIndex] ?? null;
   const previousResponse =
-    activeStepIndex > 0 ? (journey[activeStepIndex - 1] ?? null) : null;
+    activeStepIndex > 0 &&
+    journey[activeStepIndex - 1]?.query === (activeResponse?.query ?? query)
+      ? journey[activeStepIndex - 1]
+      : null;
   const profileName =
     config?.profiles.find((profile) => profile.id === activeStep.profileId)
       ?.display_name ?? "Anonymous";
@@ -940,255 +824,366 @@ export function SearchLabPage() {
   const flowSteps = executionSteps(activeResponse, activeStep.mode);
   const hasNextStep = activeStepIndex < activePath.steps.length - 1;
 
+  const insight = activeResponse
+    ? resultInsight(activeResponse, previousResponse)
+    : null;
+
   return (
     <main
-      className="search-page"
+      className="retail-showcase"
       data-retailer={retailerExperience.id}
       style={retailerThemeStyle(retailerExperience.theme)}
     >
-      <header className="masthead">
-        <p className="eyebrow">
-          {config?.retailer.organization_name ?? "Blackhawk Networks"} demo
-        </p>
-        <div className="title-row">
-          <div>
-            <h1>{config?.retailer.experience_name ?? "GiftFind"}</h1>
-            <p className="subtitle">
-              {config?.retailer.experience_subtitle ?? "RedisVL Relevance Lab"}
-            </p>
-          </div>
-          <div className="masthead-tools">
-            <p
-              className={
-                isReady ? "runtime-state healthy" : "runtime-state unavailable"
-              }
-              aria-live="polite"
-            >
-              {isReady ? "Redis connected" : "Checking runtime"}
-            </p>
-            <a
-              aria-label="Open internal demo configuration"
-              className="configuration-link"
-              href="/?view=configuration"
-              title="Internal demo configuration"
-            >
-              <span aria-hidden="true">⚙</span>
-            </a>
-          </div>
+      <header className="retail-header">
+        <div className="retail-identity">
+          <a href="/" className="experience-name">
+            {config?.retailer.experience_name ?? "GiftFind"}
+          </a>
+          <span>
+            {config?.retailer.organization_name ?? "Blackhawk Networks"}
+          </span>
+        </div>
+        <div className="retail-header-tools">
+          <span
+            className={
+              isReady ? "connection-status connected" : "connection-status"
+            }
+            aria-live="polite"
+          >
+            <span aria-hidden="true" />
+            {isReady
+              ? "Redis connected"
+              : page.kind === "error"
+                ? "Runtime unavailable"
+                : "Checking runtime"}
+          </span>
+          <a
+            className="icon-command"
+            href="/?view=configuration"
+            title="Internal demo configuration"
+            aria-label="Open internal demo configuration"
+          >
+            <Settings2 size={20} />
+          </a>
         </div>
       </header>
-      <section className="search-workspace" aria-labelledby="search-heading">
-        <div className="workspace-heading">
-          <div>
-            <p className="label">RedisVL demo</p>
-            <h2 id="search-heading">Guided relevance walkthrough</h2>
-          </div>
-          <p>
+
+      <section className="retail-search" aria-labelledby="search-heading">
+        <div className="retail-search-heading">
+          <h1 id="search-heading">
+            {config?.retailer.experience_subtitle ?? "RedisVL Relevance Lab"}
+          </h1>
+          <span>
             {config
-              ? `${config.catalog_count} ${config.retailer.catalog_label} indexed`
+              ? `${config.catalog_count} ${config.retailer.catalog_label}`
               : "Loading catalog"}
-          </p>
+          </span>
         </div>
-        <div className="walkthrough-shell">
-          <aside className="path-picker" aria-labelledby="path-picker-heading">
-            <p className="label">Choose a path</p>
-            <h3 id="path-picker-heading">Demo storyline</h3>
-            <label>
-              <span>Path</span>
-              <select
-                onChange={(event) => choosePath(event.target.value)}
-                value={pathId}
+        <form className="retail-search-form" onSubmit={runStep}>
+          <div className="retail-search-input autocomplete">
+            <Search size={22} aria-hidden="true" />
+            <input
+              aria-label="Customer request"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-controls="redis-suggestions"
+              aria-activedescendant={
+                isSuggestionOpen && activeSuggestionIndex >= 0
+                  ? `suggestion-${activeSuggestionIndex}`
+                  : undefined
+              }
+              aria-expanded={
+                typeaheadEnabled && isSuggestionOpen && suggestions.length > 0
+              }
+              disabled={isSearching}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setIsSuggestionOpen(typeaheadEnabled);
+                setActiveSuggestionIndex(-1);
+              }}
+              onFocus={() => setIsSuggestionOpen(typeaheadEnabled)}
+              onBlur={() => setIsSuggestionOpen(false)}
+              onKeyDown={handleSuggestionKeyDown}
+              value={query}
+            />
+            {query && (
+              <button
+                className="icon-command"
+                type="button"
+                title="Clear search"
+                aria-label="Clear search"
+                disabled={isSearching}
+                onClick={() => {
+                  setQuery("");
+                  setSuggestions([]);
+                }}
               >
-                {demoPaths.map((path) => (
-                  <option key={path.id} value={path.id}>
-                    {path.label}
+                <X size={18} />
+              </button>
+            )}
+            {typeaheadEnabled && isSuggestionOpen && suggestions.length > 0 && (
+              <div
+                className="autocomplete-menu"
+                id="redis-suggestions"
+                role="listbox"
+              >
+                <p>Redis Search suggestions</p>
+                {suggestions.map((suggestion, index) => (
+                  <button
+                    id={`suggestion-${index}`}
+                    aria-selected={index === activeSuggestionIndex}
+                    className={index === activeSuggestionIndex ? "active" : ""}
+                    key={suggestion.id}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => selectSuggestion(suggestion)}
+                    role="option"
+                    type="button"
+                  >
+                    {suggestion.brand_name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <button
+            className="primary-command"
+            disabled={isSearching || !isReady || !query.trim()}
+            type="submit"
+          >
+            {isSearching ? (
+              <LoaderCircle className="spin" size={18} />
+            ) : (
+              <Search size={18} />
+            )}
+            {isSearching ? "Searching" : activeStep.actionLabel}
+          </button>
+        </form>
+        {page.kind === "error" && (
+          <p className="error" role="alert">
+            The demo could not connect to the service.{" "}
+            <a href="/">Retry connection</a>
+          </p>
+        )}
+        {searchError && (
+          <p className="error" role="alert">
+            The search service is unavailable. Please try again.
+          </p>
+        )}
+      </section>
+
+      <section className="presenter-bar" aria-label="Demo controls">
+        <label className="retail-path">
+          <span>Demo path</span>
+          <select
+            aria-label="Path"
+            disabled={isSearching}
+            onChange={(event) => choosePath(event.target.value)}
+            value={activePath.id}
+          >
+            {demoPaths.map((path) => (
+              <option key={path.id} value={path.id}>
+                {path.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <ol className="retail-steps" aria-label="Demo steps">
+          {activePath.steps.map((step, index) => (
+            <li
+              className={
+                index === activeStepIndex
+                  ? "current"
+                  : index < activeStepIndex
+                    ? "complete"
+                    : ""
+              }
+              key={step.title}
+              aria-current={index === activeStepIndex ? "step" : undefined}
+            >
+              <span className="step-number">
+                {index < activeStepIndex ? <Check size={13} /> : index + 1}
+              </span>
+              <span>{step.title}</span>
+            </li>
+          ))}
+        </ol>
+        <div className="retail-switches">
+          <label className="retail-switch">
+            <input
+              type="checkbox"
+              role="switch"
+              checked={prefixMatchingEnabled}
+              disabled={isSearching}
+              onChange={(event) =>
+                setPrefixMatchingEnabled(event.target.checked)
+              }
+            />
+            <span>Brand prefix</span>
+          </label>
+          <label className="retail-switch">
+            <input
+              type="checkbox"
+              role="switch"
+              checked={typeaheadEnabled}
+              disabled={isSearching}
+              onChange={(event) => setTypeaheadEnabled(event.target.checked)}
+            />
+            <span>Typeahead</span>
+          </label>
+          <button
+            className="icon-command"
+            type="button"
+            title="Reset this path"
+            aria-label="Reset this path"
+            disabled={isSearching}
+            onClick={restartPath}
+          >
+            <RotateCcw size={18} />
+          </button>
+        </div>
+      </section>
+
+      <div className="retail-body">
+        <section
+          className="retail-stage"
+          aria-labelledby="stage-heading"
+          aria-busy={isSearching}
+        >
+          <div className="retail-stage-heading">
+            <div>
+              <p className="micro-label">
+                Step {activeStepIndex + 1} of {activePath.steps.length}
+              </p>
+              <h2 id="stage-heading">{activeStep.title}</h2>
+            </div>
+            <div
+              className="view-switch"
+              role="group"
+              aria-label="Result layout"
+            >
+              <button
+                type="button"
+                className="icon-command"
+                title="Product grid"
+                aria-label="Product grid"
+                aria-pressed={resultLayout === "grid"}
+                onClick={() => setResultLayout("grid")}
+              >
+                <Grid2X2 size={18} />
+              </button>
+              <button
+                type="button"
+                className="icon-command"
+                title="Product list"
+                aria-label="Product list"
+                aria-pressed={resultLayout === "list"}
+                onClick={() => setResultLayout("list")}
+              >
+                <List size={19} />
+              </button>
+            </div>
+          </div>
+          {activeStep.mode === "reranked" && (
+            <label className="retail-reranker">
+              <span>Reranker</span>
+              <select
+                disabled={isSearching}
+                onChange={(event) => setRerankerId(event.target.value)}
+                value={rerankerId}
+              >
+                {config?.rerankers.map((reranker) => (
+                  <option key={reranker.id} value={reranker.id}>
+                    {reranker.display_name}
                   </option>
                 ))}
               </select>
             </label>
-            <p>{activePath.summary}</p>
-          </aside>
-          <section
-            className="walkthrough-stage"
-            aria-labelledby="stage-heading"
-          >
-            <p className="label">
-              Step {activeStepIndex + 1} of {activePath.steps.length}
-            </p>
-            <h3 id="stage-heading">{activeStep.title}</h3>
-            <ol className="walkthrough-steps" aria-label="Demo steps">
-              {activePath.steps.map((step, index) => (
-                <li
-                  className={
-                    index === activeStepIndex
-                      ? "current"
-                      : index < activeStepIndex
-                        ? "complete"
-                        : ""
-                  }
-                  key={step.title}
-                >
-                  <span>{index + 1}</span>
-                  {step.title}
-                </li>
-              ))}
-            </ol>
-            <form className="walkthrough-action" onSubmit={runStep}>
-              <label className="walkthrough-query">
-                <span>Customer request</span>
-                <div className="autocomplete">
-                  <input
-                    aria-autocomplete="list"
-                    aria-controls="redis-suggestions"
-                    aria-expanded={
-                      typeaheadEnabled &&
-                      isSuggestionOpen &&
-                      suggestions.length > 0
-                    }
-                    onChange={(event) => {
-                      setQuery(event.target.value);
-                      setIsSuggestionOpen(typeaheadEnabled);
-                      setActiveSuggestionIndex(-1);
+          )}
+          {activeResponse && insight ? (
+            <>
+              <div className="retail-next">
+                <p>{activeStep.narration}</p>
+                {hasNextStep ? (
+                  <button
+                    className="primary-command"
+                    type="button"
+                    disabled={isSearching || query !== activeResponse.query}
+                    onClick={() => {
+                      const nextStep = activePath.steps[activeStepIndex + 1];
+                      if (nextStep.prefixMatching !== undefined)
+                        setPrefixMatchingEnabled(nextStep.prefixMatching);
+                      setActiveStepIndex((index) => index + 1);
+                      setRoundTripMs(null);
                     }}
-                    onFocus={() => setIsSuggestionOpen(typeaheadEnabled)}
-                    onKeyDown={handleSuggestionKeyDown}
-                    value={query}
-                  />
-                  {typeaheadEnabled &&
-                    isSuggestionOpen &&
-                    suggestions.length > 0 && (
-                    <div
-                      className="autocomplete-menu"
-                      id="redis-suggestions"
-                      role="listbox"
-                    >
-                      <p>Redis Search suggestions</p>
-                      {suggestions.map((suggestion, index) => (
-                        <button
-                          aria-selected={index === activeSuggestionIndex}
-                          className={
-                            index === activeSuggestionIndex ? "active" : ""
-                          }
-                          key={suggestion.id}
-                          onClick={() => selectSuggestion(suggestion)}
-                          role="option"
-                          type="button"
-                        >
-                          {suggestion.brand_name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </label>
-              {activeStep.mode === "reranked" && (
-                <label className="reranker-field">
-                  <span>Reranker</span>
-                  <select
-                    onChange={(event) => setRerankerId(event.target.value)}
-                    value={rerankerId}
                   >
-                    {config?.rerankers.map((reranker) => (
-                      <option key={reranker.id} value={reranker.id}>
-                        {reranker.display_name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              {!activeResponse && (
-                <button disabled={isSearching || !isReady} type="submit">
-                  {isSearching ? "Working" : activeStep.actionLabel}
-                </button>
-              )}
-              {activeResponse && activeStep.mode === "reranked" && (
-                <button disabled={isSearching || !isReady} type="submit">
-                  {isSearching ? "Working" : "Run selected reranker"}
-                </button>
-              )}
-              {activeResponse && hasNextStep && (
-                <button
-                  onClick={() => {
-                    const nextStep = activePath.steps[activeStepIndex + 1];
-                    if (nextStep.prefixMatching !== undefined) {
-                      setPrefixMatchingEnabled(nextStep.prefixMatching);
-                    }
-                    setActiveStepIndex((index) => index + 1);
-                  }}
-                  type="button"
-                >
-                  Continue: {activePath.steps[activeStepIndex + 1].title}
-                </button>
-              )}
-              {activeResponse && !hasNextStep && (
-                <button onClick={restartPath} type="button">
-                  Restart path
-                </button>
-              )}
-            </form>
-            {searchError && (
-              <p className="error" role="alert">
-                The search service is unavailable.
-              </p>
-            )}
-            {activeResponse && (
-              <>
-                <StepInsight
-                  detail={activeStep.detail}
-                  previousResponse={previousResponse}
-                  response={activeResponse}
-                />
-                {activeResponse.action ? (
-                  <ActionRouteCard response={activeResponse} />
+                    Continue: {activePath.steps[activeStepIndex + 1].title}
+                    <ArrowRight size={18} />
+                  </button>
                 ) : (
-                  <ResultList
-                    compact
-                    response={activeResponse}
-                    visibleLimit={3}
-                  />
+                  <button
+                    className="text-command"
+                    disabled={isSearching}
+                    onClick={restartPath}
+                    type="button"
+                  >
+                    <RotateCcw size={16} />
+                    Restart path
+                  </button>
                 )}
-              </>
-            )}
-          </section>
-          <aside className="speaker-note" aria-label="Presenter note">
-            <p className="label">Key takeaway</p>
-            <p>{activeStep.narration}</p>
-            <button onClick={restartPath} type="button">
-              Reset this path
-            </button>
-            <section
-              className="search-feature-controls"
-              aria-labelledby="feature-controls-heading"
-            >
-              <p className="label">Demo controls</p>
-              <h3 id="feature-controls-heading">Search features</h3>
-              <label className="feature-toggle">
-                <input
-                  checked={prefixMatchingEnabled}
-                  onChange={(event) =>
-                    setPrefixMatchingEnabled(event.target.checked)
-                  }
-                  type="checkbox"
+              </div>
+              <div className="retail-insight" aria-live="polite">
+                <Check size={18} />
+                <div>
+                  <strong>{insight.title}</strong>
+                  <p>{insight.detail}</p>
+                </div>
+              </div>
+              <div className="retail-result-meta">
+                <span>Results for &ldquo;{activeResponse.query}&rdquo;</span>
+                <span>{activeResponse.results.length} results</span>
+              </div>
+              {activeResponse.action ? (
+                <ActionRouteCard response={activeResponse} />
+              ) : (
+                <RetailResults
+                  key={`${activeStepIndex}-${activeResponse.query}`}
+                  response={activeResponse}
+                  previous={previousResponse}
+                  retailerId={retailerExperience.id}
+                  layout={resultLayout}
                 />
-                <span>Brand prefix search</span>
-                <strong>{prefixMatchingEnabled ? "On" : "Off"}</strong>
-              </label>
-              <label className="feature-toggle">
-                <input
-                  checked={typeaheadEnabled}
-                  onChange={(event) =>
-                    setTypeaheadEnabled(event.target.checked)
-                  }
-                  type="checkbox"
-                />
-                <span>Typeahead suggestions</span>
-                <strong>{typeaheadEnabled ? "On" : "Off"}</strong>
-              </label>
-            </section>
-          </aside>
-        </div>
+              )}
+            </>
+          ) : (
+            <div className="retail-ready">
+              <Search size={32} aria-hidden="true" />
+              <h3>
+                {isSearching
+                  ? "Finding the best matches"
+                  : "Ready when you are"}
+              </h3>
+              <p>{activeStep.detail}</p>
+            </div>
+          )}
+        </section>
+        <ChangeSummary
+          response={activeResponse}
+          previous={previousResponse}
+          retailerId={retailerExperience.id}
+          detail={activeStep.narration}
+          roundTripMs={roundTripMs}
+        />
+      </div>
+
+      <section
+        className="retail-observability"
+        aria-label="Technical details and observability"
+      >
         <details className="technical-details">
-          <summary>Technical details and observability</summary>
+          <summary>
+            <ChevronRight size={18} />
+            Execution and timing
+          </summary>
           <div className="technical-grid">
             <section className="search-flow" aria-labelledby="flow-heading">
               <h3 id="flow-heading">Execution trace</h3>
@@ -1201,47 +1196,44 @@ export function SearchLabPage() {
                 ))}
               </ol>
             </section>
-            <section className="timing-panel" aria-labelledby="timing-heading">
-              <h3 id="timing-heading">Request timing</h3>
+            <section className="timing-panel">
+              <h3>Request timing</h3>
               <TimingPanel search={search} roundTripMs={roundTripMs} />
             </section>
-            <section
-              className="routing-panel"
-              aria-labelledby="routing-heading"
-            >
-              <h3 id="routing-heading">Route decision</h3>
+            <section className="routing-panel">
+              <h3>Route decision</h3>
               <RoutingPanel search={search} />
             </section>
-            <section className="policy-panel" aria-labelledby="policy-heading">
-              <h3 id="policy-heading">Policy contribution</h3>
+            <section className="policy-panel">
+              <h3>Policy contribution</h3>
               <PolicyPanel
                 search={search}
                 profileName={profileName}
                 promotionName={promotionName}
               />
             </section>
-            <section
-              className="reranker-panel"
-              aria-labelledby="reranker-heading"
-            >
-              <h3 id="reranker-heading">Reranker</h3>
+            <section className="reranker-panel">
+              <h3>Reranker</h3>
               <RerankerPanel search={search} />
             </section>
-            <section
-              className="telemetry-panel"
-              aria-labelledby="telemetry-heading"
-            >
-              <h3 id="telemetry-heading">Demo telemetry</h3>
+            <section className="telemetry-panel">
+              <h3>Demo telemetry</h3>
               <TelemetryPanel telemetry={telemetry} />
             </section>
-            <section
-              className="redis-query-panel"
-              aria-labelledby="redis-query-heading"
-            >
-              <h3 id="redis-query-heading">Redis Search queries</h3>
-              <RedisQueryPanel search={search} />
-            </section>
           </div>
+        </details>
+        <details className="technical-details">
+          <summary>
+            <ChevronRight size={18} />
+            Redis Search queries
+          </summary>
+          <RedisQueryPanel search={search} />
+        </details>
+        <details className="technical-details">
+          <summary>
+            <ChevronRight size={18} />
+            Golden query scorecard and load testing
+          </summary>
           <ScorecardPanel
             evaluation={evaluation}
             isAvailable={isReady}
@@ -1256,9 +1248,11 @@ export function SearchLabPage() {
           />
         </details>
       </section>
-      <footer>
-        {config?.disclaimer ??
-          "All catalog records, personas, tenants, promotions, and events are synthetic demo data."}
+      <footer className="retail-footer">
+        <span className="redisvl-credit">
+          Made with <strong>RedisVL</strong>
+        </span>
+        <p>{config?.disclaimer ?? "Synthetic demo data."}</p>
       </footer>
     </main>
   );

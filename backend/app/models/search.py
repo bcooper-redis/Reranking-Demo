@@ -88,6 +88,7 @@ class ActionCard(BaseModel):
 class ProductResult(BaseModel):
     id: str
     brand_name: str
+    image_url: str | None = None
     description: str
     categories: list[str]
     delivery_types: list[str]

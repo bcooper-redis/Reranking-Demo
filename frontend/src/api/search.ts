@@ -68,6 +68,7 @@ export type RetailerImportPayload = {
   };
   products: {
     brand_name: string;
+    image_url?: string | null;
     description: string;
     aliases?: string[];
     categories: string[];
@@ -105,6 +106,7 @@ export type PublicConfig = {
 export type ProductResult = {
   id: string;
   brand_name: string;
+  image_url?: string | null;
   description: string;
   categories: string[];
   delivery_types: string[];

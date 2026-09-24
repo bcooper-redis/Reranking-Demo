@@ -1,6 +1,6 @@
 import re
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, HttpUrl, model_validator
 
 
 class ImportedTheme(BaseModel):
@@ -12,6 +12,7 @@ class ImportedTheme(BaseModel):
 
 class ImportedProduct(BaseModel):
     brand_name: str = Field(min_length=2, max_length=140)
+    image_url: HttpUrl | None = None
     description: str = Field(min_length=12, max_length=700)
     aliases: list[str] = Field(default_factory=list, max_length=12)
     categories: list[str] = Field(min_length=1, max_length=6)

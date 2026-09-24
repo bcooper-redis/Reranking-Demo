@@ -434,6 +434,7 @@ def _record(
     max_denomination: int | None = None,
     delivery_types: list[str] | None = None,
     tenant_ids: list[str] | None = None,
+    image_url: str | None = None,
 ) -> dict[str, str]:
     delivery_types = delivery_types or (["egift"] if ordinal % 3 == 0 else ["egift", "physical"])
     if tenant_ids is None:
@@ -469,7 +470,7 @@ def _record(
         "conversion_score": f"{0.35 + ((ordinal * 11) % 60) / 100:.2f}",
         "margin_score": f"{0.25 + ((ordinal * 13) % 50) / 100:.2f}",
         "promotion_ids": "",
-        "image_url": "",
+        "image_url": image_url or "",
         "embedding_text": embedding_text,
     }
 

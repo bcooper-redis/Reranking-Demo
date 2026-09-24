@@ -63,6 +63,7 @@ def build_retailer(payload: RetailerPayload) -> RetailerDefinition:
         _record(
             product_id=f"product_{ordinal:03d}",
             brand_name=product.brand_name,
+            image_url=str(product.image_url) if product.image_url else None,
             aliases=list(dict.fromkeys([product.brand_name, *product.aliases])),
             description=product.description,
             categories=product.categories,

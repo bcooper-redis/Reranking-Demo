@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ChangeEvent, CSSProperties } from "react";
+import { ArrowLeft, ArrowRight, Copy, Plus, Trash2 } from "lucide-react";
 
 import {
   deleteRetailer,
@@ -15,9 +16,13 @@ import { getRetailerExperience } from "../retailers";
 
 const CATALOG_PROMPT = `Create and attach a downloadable file named [COMPANY DOMAIN]-demo-catalog.json for a synthetic product-discovery demo based on the public website for [COMPANY DOMAIN].
 
-Put the JSON only in the downloadable file. In your chat response, confirm the file is attached but do not print the JSON. Do not use Markdown, comments, images, copyrighted descriptions, live prices, inventory claims, or private data. Create exactly 360 plausible synthetic products that illustrate the company categories and brands. Use short original descriptions.
+Put the JSON only in the downloadable file. In your chat response, confirm the file is attached but do not print the JSON. Do not use Markdown, comments, embedded images, copyrighted descriptions, live prices, inventory claims, or private data. Create exactly 360 plausible synthetic products that illustrate the company categories and brands. Use short original descriptions.
 
-Also create a demo_paths object from the catalog you generate. These are intentional e-commerce demo prompts: customer_query should be a natural shopper request, exact_product_query must exactly match a generated product name or alias, and preference_query should be a shopper request that can benefit from the chosen category. preference_category must exactly match one category value used in the products. Make every prompt well-supported by the generated products.
+Each product may include an optional image_url. Use a direct HTTPS image URL only when you have verified an appropriate public retailer product image and it accurately represents this product. Never invent image URLs, use unrelated product photos, or claim synthetic items are real inventory. Use null when no verified image is available; the app provides a clean branded placeholder. Do not put image data or base64 in the file.
+
+Also create a demo_paths object from the catalog you generate. customer_query and preference_query must each be a natural shopper request for ONE SINGLE ITEM, expressed in the singular, using 6-10 words. Add only one brief shopper context or purpose. Do not request multiple items, plural quantities, bundles, shopping lists, or alternatives such as "a chair or a pillow". Do not pile on requirements. For example: "First time camper and I need a tent", "a comfortable patio chair for my small balcony", or "a coffee gift card for my child's teacher". Name an item supported by this retailer's generated catalog, not a generic gift or broad shopping mission. Check that both queries contain 6-10 words and ask for only one item before returning the file.
+
+exact_product_query must exactly match one generated product name or alias; do not change that name to satisfy a word count. preference_query must follow the single-item, 6-10-word rule above and describe an item that can benefit from the chosen category. preference_category must exactly match one category value used in the products. Make every prompt well-supported by the generated products. The word-count rule applies only to customer_query and preference_query, not exact_product_query or the short prefix_query.
 
 The prefix demo is required. Choose a short one-word prefix_query that has two deliberately different outcomes: at least one non-target product must contain it as a full literal word, while prefix_expected_product must begin with it but must not contain it as a full word. For example, Star can surface entertainment content before a prefix lookup reveals Starbucks. Do not put the short prefix itself in the expected product's aliases or description.
 
@@ -33,9 +38,9 @@ Use this exact shape:
     "canvas": "#F7F9FA"
   },
   "demo_paths": {
-    "customer_query": "durable outdoor gear for a weekend camping trip",
+    "customer_query": "comfortable daypack for a beginner hiker",
     "exact_product_query": "Summit Trail Daypack",
-    "preference_query": "a gift for an avid camper",
+    "preference_query": "a comfortable camp chair for weekend camping",
     "preference_profile_name": "Camping Enthusiast",
     "preference_category": "Camping & Hiking",
     "prefix_query": "star",
@@ -45,6 +50,7 @@ Use this exact shape:
     {
       "brand_name": "Synthetic Product Name",
       "description": "An original, concise description of the product and shopping intent.",
+      "image_url": null,
       "aliases": ["search phrase", "brand shorthand"],
       "categories": ["category"],
       "recipient_tags": ["shopper persona"],
@@ -60,9 +66,8 @@ export function DemoConfigurationPage() {
   const [selectedRetailer, setSelectedRetailer] = useState(
     getActiveRetailerId(),
   );
-  const [importPayload, setImportPayload] = useState<RetailerImportPayload | null>(
-    null,
-  );
+  const [importPayload, setImportPayload] =
+    useState<RetailerImportPayload | null>(null);
   const [demoName, setDemoName] = useState("");
   const [importStatus, setImportStatus] = useState("");
   const [importError, setImportError] = useState("");
@@ -106,11 +111,15 @@ export function DemoConfigurationPage() {
       }
       setImportPayload(parsed);
       setDemoName(parsed.experience_name ?? "");
-      setImportStatus(`${parsed.products.length} products ready for generation.`);
+      setImportStatus(
+        `${parsed.products.length} products ready for generation.`,
+      );
     } catch (error) {
       setImportPayload(null);
       setImportError(
-        error instanceof Error ? error.message : "The catalog file could not be read.",
+        error instanceof Error
+          ? error.message
+          : "The catalog file could not be read.",
       );
     }
   }
@@ -136,7 +145,9 @@ export function DemoConfigurationPage() {
       );
     } catch (error) {
       setImportError(
-        error instanceof Error ? error.message : "The retailer could not be generated.",
+        error instanceof Error
+          ? error.message
+          : "The retailer could not be generated.",
       );
     } finally {
       setIsGenerating(false);
@@ -157,7 +168,9 @@ export function DemoConfigurationPage() {
       setConfig(nextConfig);
     } catch (error) {
       setImportError(
-        error instanceof Error ? error.message : "The retailer could not be deleted.",
+        error instanceof Error
+          ? error.message
+          : "The retailer could not be deleted.",
       );
     } finally {
       setIsDeleting(false);
@@ -169,7 +182,9 @@ export function DemoConfigurationPage() {
       await navigator.clipboard.writeText(CATALOG_PROMPT);
       setPromptStatus("Prompt copied to clipboard.");
     } catch {
-      setPromptStatus("Clipboard access was unavailable. Select the prompt text to copy it.");
+      setPromptStatus(
+        "Clipboard access was unavailable. Select the prompt text to copy it.",
+      );
     }
   }
 
@@ -189,6 +204,10 @@ export function DemoConfigurationPage() {
       }
     >
       <header className="configuration-header">
+        <a href="/" className="configuration-back">
+          <ArrowLeft size={16} />
+          Back to demo
+        </a>
         <p className="eyebrow">Internal demo configuration</p>
         <h1>Prepare a retailer experience</h1>
         <p>
@@ -225,7 +244,7 @@ export function DemoConfigurationPage() {
           </div>
         </dl>
         <button onClick={() => window.location.assign("/")} type="button">
-          Open prepared demo
+          Open prepared demo <ArrowRight size={16} />
         </button>
         {canDeleteSelectedRetailer && !isDeleteConfirming && (
           <button
@@ -233,17 +252,21 @@ export function DemoConfigurationPage() {
             onClick={() => setIsDeleteConfirming(true)}
             type="button"
           >
+            <Trash2 size={16} />
             Delete custom demo
           </button>
         )}
         {canDeleteSelectedRetailer && isDeleteConfirming && (
           <div className="delete-confirmation" role="alert">
             <p>
-              Delete this custom demo and its isolated Redis catalog, search index, and
-              routing data?
+              Delete this custom demo and its isolated Redis catalog, search
+              index, and routing data?
             </p>
             <div>
-              <button onClick={() => setIsDeleteConfirming(false)} type="button">
+              <button
+                onClick={() => setIsDeleteConfirming(false)}
+                type="button"
+              >
                 Keep demo
               </button>
               <button
@@ -278,6 +301,7 @@ export function DemoConfigurationPage() {
             onClick={() => void copyCatalogPrompt()}
             type="button"
           >
+            <Copy size={16} />
             Copy prompt
           </button>
           {promptStatus && <p className="prompt-status">{promptStatus}</p>}
@@ -311,8 +335,8 @@ export function DemoConfigurationPage() {
             <p className="label">Generation complete</p>
             <h3>{generatedRetailer.experience_name} is ready</h3>
             <p>
-              {generatedRetailer.catalog_count} products are indexed in an isolated
-              Redis namespace.
+              {generatedRetailer.catalog_count} products are indexed in an
+              isolated Redis namespace.
             </p>
             <code>{generatedRetailer.index_alias}</code>
             <button onClick={() => window.location.assign("/")} type="button">
@@ -325,9 +349,17 @@ export function DemoConfigurationPage() {
           onClick={() => void generateRetailer()}
           type="button"
         >
-          {isGenerating ? "Generating retailer demo..." : "Generate retailer demo"}
+          <Plus size={16} />
+          {isGenerating
+            ? "Generating retailer demo..."
+            : "Generate retailer demo"}
         </button>
       </section>
+      <footer className="retail-footer configuration-footer">
+        <span className="redisvl-credit">
+          Made with <strong>RedisVL</strong>
+        </span>
+      </footer>
     </main>
   );
 }
